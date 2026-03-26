@@ -1,0 +1,153 @@
+<resources>
+    <string name="app_name">Moto Tap</string>
+    <string name="splash_tagline">“Trusted automotive services at your fingertips”</string>
+    <string name="get_started">GET STARTED</string>
+    <string name="i_want_to">I WANT TO:</string>
+    <string name="request_service">Request Service</string>
+    <string name="provide_service">Provide Service</string>
+
+    <!-- Categories -->
+    <string name="emergency_services">Emergency Services</string>
+    <string name="maintenance_services">Maintenance Services</string>
+    <string name="upgrades_value_added">Upgrades &amp; Value-Added</string>
+
+    <!-- Emergency Services -->
+    <string name="road_assistance">Road Assistance</string>
+    <string name="jumpstart">Jumpstart</string>
+    <string name="fuel_delivery">Fuel delivery</string>
+    <string name="lockout_assistance">Lockout assistance</string>
+
+    <string name="towing_services">Towing Services</string>
+    <string name="flatbed_towing">Flatbed towing</string>
+    <string name="wheel_lift_towing">Wheel-lift towing</string>
+    <string name="dolly_towing">Dolly towing</string>
+    <string name="accident_towing">Accident towing</string>
+    <string name="breakdown_towing">Breakdown towing</string>
+    <string name="long_distance_towing">Long-distance towing</string>
+    <string name="off_road_recovery">Off-road recovery</string>
+    <string name="motorcycle_towing">Motorcycle towing</string>
+    <string name="heavy_vehicle_towing">Heavy vehicle towing</string>
+    <string name="low_clearance_towing">Low-clearance vehicle towing</string>
+
+    <string name="mobile_mechanic">Mobile Mechanic</string>
+    <string name="onsite_diagnostics">On-site vehicle diagnostics</string>
+    <string name="battery_electrical_check">Battery &amp; electrical check</string>
+    <string name="engine_fault_id">Engine fault identification</string>
+    <string name="battery_replacement">Battery replacement</string>
+    <string name="spark_plug_replacement">Spark plug replacement</string>
+    <string name="belt_replacement">Belt replacement</string>
+    <string name="hose_leak_fixes">Hose leak fixes</string>
+    <string name="overheating_assistance">Overheating assistance</string>
+    <string name="brake_fix_temporary">Brake issue temporary fix</string>
+    <string name="engine_wont_start">Engine won’t start troubleshooting</string>
+    <string name="oil_topup_change">Engine oil top-up/change</string>
+    <string name="coolant_refill">Coolant refill</string>
+    <string name="brake_fluid_topup">Brake fluid top-up</string>
+    <string name="puncture_repair">Puncture repair</string>
+    <string name="tire_change">Tire change</string>
+
+    <string name="emergency_tire">Emergency Tire Services</string>
+    <string name="emergency_battery">Emergency Battery Services</string>
+
+    <!-- Maintenance Services -->
+    <string name="garage_services">Garage Services</string>
+    <string name="engine_overhaul">Engine overhaul</string>
+    <string name="timing_belt_replacement">Timing belt replacement</string>
+    <string name="fuel_system_repair">Fuel system repair</string>
+    <string name="exhaust_system_repair">Exhaust system repair</string>
+    <string name="gearbox_repair">Gearbox repair</string>
+    <string name="clutch_replacement">Clutch replacement</string>
+    <string name="transmission_fluid_service">Transmission fluid service</string>
+    <string name="brake_pad_replacement">Brake pad replacement</string>
+    <string name="disc_skimming">Disc skimming</string>
+    <string name="full_brake_system_repair">Full brake system repair</string>
+    <string name="shock_absorber_replacement">Shock absorber replacement</string>
+    <string name="steering_rack_repair">Steering rack repair</string>
+    <string name="wheel_alignment">Wheel alignment</string>
+    <string name="wiring_overhaul">Wiring overhaul</string>
+    <string name="ecu_repair">ECU repair</string>
+    <string name="alternator_starter_repair">Alternator &amp; starter repair</string>
+    <string name="ac_repair_servicing">AC repair &amp; servicing</string>
+    <string name="radiator_repair">Radiator repair</string>
+    <string name="cooling_system_flush">Cooling system flush</string>
+
+    <string name="preventive_maintenance">Preventive &amp; Routine Maintenance</string>
+    <string name="vehicle_diagnostics">Vehicle Diagnostics</string>
+    <string name="auto_electrical">Auto Electrical Services</string>
+    <string name="ac_services">AC Services</string>
+    <string name="tire_wheel_services">Tire &amp; Wheel Services</string>
+
+    <!-- Upgrades & Value-Added -->
+    <string name="car_wash">Car Wash Services</string>
+    <string name="exterior_wash">Exterior wash</string>
+    <string name="interior_vacuum">Interior vacuum</string>
+    <string name="tire_cleaning">Tire cleaning</string>
+    <string name="exterior_interior_cleaning">Exterior + interior cleaning</string>
+    <string name="dashboard_polish">Dashboard polish</string>
+    <string name="window_cleaning">Window cleaning</string>
+    <string name="full_car_detailing">Full car detailing</string>
+    <string name="engine_cleaning">Engine cleaning</string>
+    <string name="underbody_wash">Underbody wash</string>
+    <string name="seat_shampoo">Seat shampoo (fabric)</string>
+    <string name="leather_conditioning">Leather conditioning</string>
+    <string name="odor_removal">Odor removal</string>
+    <string name="waxing_polishing">Waxing &amp; polishing</string>
+    <string name="ceramic_coating">Ceramic coating</string>
+    <string name="headlight_restoration">Headlight restoration</string>
+
+    <string name="car_body_cosmetic">Car Body &amp; Cosmetic Services</string>
+    <string name="car_customization">Car Customization &amp; Upgrades</string>
+
+    <string name="select_service">Select Service</string>
+    <string name="describe_issue">Describe Issue</string>
+    <string name="current_location">Current Location: Nairobi, Kenya</string>
+    <string name="submit_request">SUBMIT REQUEST</string>
+
+    <string name="labor">Labor:</string>
+    <string name="parts">Parts:</string>
+    <string name="total">Total:</string>
+    <string name="accept_pay">ACCEPT &amp; PAY</string>
+
+    <string name="on_the_way">On the Way</string>
+    <string name="in_progress">In Progress</string>
+    <string name="completed">Completed</string>
+
+    <!-- Provider Flow -->
+    <string name="provider_dashboard">PROVIDER DASHBOARD</string>
+    <string name="new_requests">New Requests</string>
+    <string name="ongoing_jobs">Ongoing Jobs</string>
+    <string name="reject">REJECT</string>
+    <string name="submit_quote">SUBMIT QUOTE</string>
+    <string name="complete">COMPLETE</string>
+
+    <string name="rating_review">RATING &amp; REVIEW</string>
+    <string name="rate_your_provider">Rate Your Provider</string>
+    <string name="add_review">ADD REVIEW</string>
+
+    <string name="home">Home</string>
+    <string name="requests">Requests</string>
+    <string name="messages">Messages</string>
+    <string name="profile">Profile</string>
+
+    <string name="login_title">Welcome back</string>
+    <string name="login_subtitle">Sign in to request or receive help nearby.</string>
+    <string name="login_phone_label">Phone number</string>
+    <string name="login_pin_label">PIN / Password</string>
+    <string name="login_button">Sign in</string>
+    <string name="login_loading">Signing in...</string>
+    <string name="login_error">Unable to sign in. Please try again.</string>
+    <string name="login_create_account">No account? Sign up</string>
+    <string name="signup_title">Create account</string>
+    <string name="signup_subtitle">Join Moto Tap and get support on the road.</string>
+    <string name="signup_name_label">Full name</string>
+    <string name="signup_confirm_pin_label">Confirm PIN / Password</string>
+    <string name="signup_button">Sign up</string>
+    <string name="signup_loading">Creating account...</string>
+    <string name="signup_have_account">Already have an account? Sign in</string>
+    <string name="signup_error">Unable to create account. Please try again.</string>
+    <string name="driver_request">Driver Request</string>
+    <string name="mechanic_queue">Mechanic Queue</string>
+    <string name="my_jobs">My jobs</string>
+    <string name="request_mechanic">Request mechanic</string>
+    <string name="overview">Overview</string>
+</resources>

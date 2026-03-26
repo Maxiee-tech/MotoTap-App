@@ -1,0 +1,26 @@
+<resources>
+    <string name="app_name">Moto Tap</string>
+    <string name="splash_tagline">Washa safari yako, msaada upo kwa mguso mmoja tu.</string>
+    <string name="login_title">Karibu tena</string>
+    <string name="login_subtitle">Ingia ili kuomba au kupokea msaada karibu nawe.</string>
+    <string name="login_phone_label">Nambari ya simu</string>
+    <string name="login_pin_label">PIN / Nenosiri</string>
+    <string name="login_button">Ingia</string>
+    <string name="login_loading">Inaingia...</string>
+    <string name="login_error">Imeshindikana kuingia. Tafadhali jaribu tena.</string>
+    <string name="login_create_account">Huna akaunti? Jisajili</string>
+    <string name="signup_title">Fungua akaunti</string>
+    <string name="signup_subtitle">Jiunge na Moto Tap upate msaada ukiwa barabarani.</string>
+    <string name="signup_name_label">Jina kamili</string>
+    <string name="signup_confirm_pin_label">Thibitisha PIN / Nenosiri</string>
+    <string name="signup_button">Jisajili</string>
+    <string name="signup_loading">Inaunda akaunti...</string>
+    <string name="signup_have_account">Una akaunti tayari? Ingia</string>
+    <string name="signup_error">Imeshindikana kuunda akaunti. Tafadhali jaribu tena.</string>
+    <string name="driver_request">Ombi la Dereva</string>
+    <string name="mechanic_queue">Foleni ya Fundi</string>
+    <string name="my_jobs">Kazi zangu</string>
+    <string name="request_mechanic">Omba fundi</string>
+    <string name="overview">Muhtasari</string>
+</resources>
+
