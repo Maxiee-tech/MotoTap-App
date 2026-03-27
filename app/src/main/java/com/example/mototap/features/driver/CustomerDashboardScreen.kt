@@ -39,7 +39,7 @@ fun CustomerDashboardScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = "MOTOTAP",
+                        text = "MOTO TAP",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 2.sp

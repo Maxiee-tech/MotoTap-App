@@ -16,6 +16,8 @@ sealed class AppRoute(
     data object RequestService : AppRoute("request_service")
     data object QuotePayment : AppRoute("quote_payment")
     data object JobTracking : AppRoute("job_tracking")
+    data object RequestHistory : AppRoute("request_history")
+    data object Profile : AppRoute("profile")
     
     // Provider Flow
     data object ProviderDashboard : AppRoute("provider_dashboard")
@@ -26,6 +28,7 @@ sealed class AppRoute(
     data object Chat : AppRoute("chat/{jobId}") {
         fun createRoute(jobId: String) = "chat/$jobId"
     }
+    data object ChatList : AppRoute("chat_list")
 
     // Legacy/Other
     data object Driver : AppRoute("driver")

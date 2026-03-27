@@ -4,10 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import com.example.mototap.R
 import com.example.mototap.core.model.JobRequest
 import com.example.mototap.features.driver.BottomNavigationBar
+import com.example.mototap.features.driver.TrackingItem
 import com.example.mototap.ui.theme.MotoRed
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,7 +36,7 @@ fun ProviderJobTrackingScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = "MOTOTAP",
+                        text = "MOTO TAP",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 2.sp
@@ -64,9 +65,6 @@ fun ProviderJobTrackingScreen(
                 )
             )
         },
-        bottomBar = {
-            BottomNavigationBar(currentRoute = "home", onNavigate = {})
-        },
         containerColor = Color.Black
     ) { paddingValues ->
         Column(
@@ -76,110 +74,32 @@ fun ProviderJobTrackingScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
+            TrackingItem(stringResource(R.string.on_the_way), Icons.Default.LocationOn, true)
+            Spacer(modifier = Modifier.height(16.dp))
+            TrackingItem(stringResource(R.string.in_progress), Icons.Default.CheckCircle, true)
+            Spacer(modifier = Modifier.height(16.dp))
+            TrackingItem(stringResource(R.string.completed), Icons.Default.CheckCircle, false)
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Button(
+                onClick = { /* Handle Complete Job */ },
+                colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
+                shape = androidx.compose.ui.graphics.RectangleShape,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MotoRed)
-                    .padding(12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .height(56.dp)
             ) {
-                Text(
-                    text = "JOB DETAILS",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = Color.White
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if (job != null) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color.DarkGray.copy(alpha = 0.5f))
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Service: ${job.issueType}",
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Problem Description:",
-                            color = Color.Gray,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(
-                            text = if (job.description.isBlank()) "No description provided." else job.description,
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Location: ${job.locationLabel}",
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Info, contentDescription = null, tint = Color.White)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Mark as Finished",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            ProviderTrackingItem(stringResource(R.string.on_the_way), Icons.Default.Refresh, true)
-            Spacer(modifier = Modifier.height(16.dp))
-            ProviderTrackingItem(stringResource(R.string.in_progress), Icons.Default.CheckCircle, true)
-            Spacer(modifier = Modifier.height(16.dp))
-            ProviderTrackingItem(stringResource(R.string.completed), Icons.Default.CheckCircle, true)
-        }
-    }
-}
-
-@Composable
-fun ProviderTrackingItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, isChecked: Boolean) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MotoRed,
-            modifier = Modifier.size(24.dp)
-        )
-        Spacer(modifier = Modifier.width(16.dp))
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .background(Color.Transparent)
-                .padding(vertical = 4.dp)
-        ) {
-            Column {
-                Text(
-                    text = label,
-                    color = Color.White,
-                    fontSize = 16.sp
-                )
-                HorizontalDivider(color = Color.Gray, thickness = 1.dp)
-            }
-        }
-        if (isChecked) {
-            Icon(
-                imageVector = Icons.Default.CheckCircle,
-                contentDescription = "Checked",
-                tint = MotoRed,
-                modifier = Modifier.size(24.dp)
-            )
         }
     }
 }

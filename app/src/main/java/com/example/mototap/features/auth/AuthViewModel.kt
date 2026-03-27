@@ -3,6 +3,7 @@ package com.example.mototap.features.auth
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.mototap.core.model.UserProfile
 import com.example.mototap.core.repository.AuthRepository
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +27,11 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
     val email = MutableStateFlow("")
     val password = MutableStateFlow("")
     val name = MutableStateFlow("")
+    val phoneNumber = MutableStateFlow("")
     val role = MutableStateFlow("customer") // default to customer
+
+    private val _userProfile = MutableStateFlow<UserProfile?>(null)
+    val userProfile: StateFlow<UserProfile?> = _userProfile.asStateFlow()
 
     fun signIn() {
         viewModelScope.launch {
@@ -38,7 +43,6 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
                 val userId = FirebaseAuth.getInstance().currentUser?.uid
                 Log.d("AuthViewModel", "signIn success, fetching role for $userId with timeout")
                 
-                // Fetch role with a 5-second timeout to prevent hanging
                 val userRole = withTimeoutOrNull(5000) {
                     userId?.let { authRepository.getUserRole(it) }
                 }
@@ -58,19 +62,77 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
             Log.d("AuthViewModel", "signUp started for ${email.value}")
             _uiState.value = AuthUiState.Loading
             
-            val result = authRepository.signUp(email.value, password.value, name.value, role.value)
-            if (result.isSuccess) {
+            // Add timeout to the entire signUp process
+            val success = withTimeoutOrNull(10000) {
+                val result = authRepository.signUp(
+                    email.value, 
+                    password.value, 
+                    name.value, 
+                    role.value,
+                    if (role.value == "mechanic") phoneNumber.value else null
+                )
+                result.isSuccess
+            } ?: false
+
+            if (success) {
                 Log.d("AuthViewModel", "signUp success, navigating with role ${role.value}")
                 _uiState.value = AuthUiState.Success(role.value)
             } else {
-                val errorMsg = result.exceptionOrNull()?.message ?: "Sign up failed"
-                Log.e("AuthViewModel", "signUp failed: $errorMsg")
+                val errorMsg = "Sign up failed or timed out. Please check your connection."
+                Log.e("AuthViewModel", errorMsg)
                 _uiState.value = AuthUiState.Error(errorMsg)
             }
         }
     }
+
+    fun checkExistingSession(onRoleFetched: (String?) -> Unit) {
+        val userId = FirebaseAuth.getInstance().currentUser?.uid
+        if (userId != null) {
+            viewModelScope.launch {
+                Log.d("AuthViewModel", "Existing session found for $userId, fetching role...")
+                val userRole = withTimeoutOrNull(5000) {
+                    authRepository.getUserRole(userId)
+                }
+                Log.d("AuthViewModel", "Session role: $userRole")
+                onRoleFetched(userRole)
+            }
+        }
+    }
     
+    fun fetchUserProfile() {
+        val userId = FirebaseAuth.getInstance().currentUser?.uid
+        if (userId != null) {
+            viewModelScope.launch {
+                val profile = authRepository.getUserProfile(userId)
+                _userProfile.value = profile
+            }
+        }
+    }
+
+    fun logout(onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            authRepository.signOut()
+            _userProfile.value = null
+            onSuccess()
+        }
+    }
+
+    fun deleteAccount(onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _uiState.value = AuthUiState.Loading
+            val result = authRepository.deleteAccount()
+            if (result.isSuccess) {
+                _userProfile.value = null
+                _uiState.value = AuthUiState.Idle
+                onSuccess()
+            } else {
+                _uiState.value = AuthUiState.Error(result.exceptionOrNull()?.message ?: "Failed to delete account")
+            }
+        }
+    }
+
     fun resetState() {
+        Log.d("AuthViewModel", "resetState called")
         _uiState.value = AuthUiState.Idle
     }
 }

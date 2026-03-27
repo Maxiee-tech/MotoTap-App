@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mototap.R
+import com.example.mototap.core.model.JobStatus
 import com.example.mototap.features.driver.BottomNavigationBar
 import com.example.mototap.ui.theme.MotoRed
 import com.google.firebase.auth.FirebaseAuth
@@ -27,6 +28,9 @@ fun ProviderDashboardScreen(
     viewModel: MechanicDashboardViewModel,
     onBack: () -> Unit,
     onSubmitQuote: () -> Unit,
+    onNavigateToRequests: () -> Unit = {},
+    onNavigateToMessages: () -> Unit = {},
+    onNavigateToProfile: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -80,7 +84,16 @@ fun ProviderDashboardScreen(
             )
         },
         bottomBar = {
-            BottomNavigationBar(currentRoute = "home", onNavigate = {})
+            BottomNavigationBar(
+                currentRoute = "home",
+                onNavigate = { route ->
+                    when(route) {
+                        "requests" -> onNavigateToRequests()
+                        "messages" -> onNavigateToMessages()
+                        "profile" -> onNavigateToProfile()
+                    }
+                }
+            )
         },
         containerColor = Color.Black
     ) { paddingValues ->
@@ -104,7 +117,7 @@ fun ProviderDashboardScreen(
                             Text(
                                 "No new requests available",
                                 color = Color.Gray,
-                                modifier = Modifier.padding(vertical = 8.dp)
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                             )
                         }
                     } else {
@@ -124,15 +137,49 @@ fun ProviderDashboardScreen(
                     ToggleRow(stringResource(R.string.ongoing_jobs), ongoingJobsActive) { ongoingJobsActive = it }
                     Spacer(modifier = Modifier.height(16.dp))
                 }
+
+                if (ongoingJobsActive) {
+                    if (uiState.ongoingJobs.isEmpty()) {
+                        item {
+                            Text(
+                                "No ongoing jobs",
+                                color = Color.Gray,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
+                    } else {
+                        items(uiState.ongoingJobs) { job ->
+                            RequestItem(
+                                label = "${job.issueType} (${job.status})",
+                                actionText = "VIEW",
+                                onActionClick = { onSubmitQuote() } // Assuming this navigates to tracking/details
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
             
+            // Status Actions for the first ongoing job
+            val firstJob = uiState.ongoingJobs.firstOrNull()
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                DashboardButton(stringResource(R.string.submit_quote), onSubmitQuote)
-                DashboardButton(stringResource(R.string.on_the_way), {})
-                DashboardButton(stringResource(R.string.in_progress), {})
-                DashboardButton(stringResource(R.string.complete), {})
+                DashboardButton(
+                    text = stringResource(R.string.on_the_way),
+                    onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.MATCHING) } },
+                    enabled = firstJob != null && firstJob.status == JobStatus.ASSIGNED
+                )
+                DashboardButton(
+                    text = stringResource(R.string.in_progress),
+                    onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.IN_PROGRESS) } },
+                    enabled = firstJob != null && (firstJob.status == JobStatus.ASSIGNED || firstJob.status == JobStatus.MATCHING)
+                )
+                DashboardButton(
+                    text = stringResource(R.string.complete),
+                    onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.COMPLETED) } },
+                    enabled = firstJob != null && firstJob.status == JobStatus.IN_PROGRESS
+                )
             }
         }
     }
@@ -190,15 +237,19 @@ fun RequestItem(label: String, actionText: String, onActionClick: () -> Unit) {
 }
 
 @Composable
-fun DashboardButton(text: String, onClick: () -> Unit) {
+fun DashboardButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
     Button(
         onClick = onClick,
-        colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MotoRed,
+            disabledContainerColor = Color.DarkGray
+        ),
         shape = androidx.compose.ui.graphics.RectangleShape,
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
     ) {
-        Text(text = text, color = Color.White, fontWeight = FontWeight.Bold)
+        Text(text = text, color = if (enabled) Color.White else Color.Gray, fontWeight = FontWeight.Bold)
     }
 }

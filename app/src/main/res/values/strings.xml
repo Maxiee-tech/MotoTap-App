@@ -16,7 +16,6 @@
     <string name="jumpstart">Jumpstart</string>
     <string name="fuel_delivery">Fuel delivery</string>
     <string name="lockout_assistance">Lockout assistance</string>
-
     <string name="towing_services">Towing Services</string>
     <string name="flatbed_towing">Flatbed towing</string>
     <string name="wheel_lift_towing">Wheel-lift towing</string>
@@ -150,4 +149,9 @@
     <string name="my_jobs">My jobs</string>
     <string name="request_mechanic">Request mechanic</string>
     <string name="overview">Overview</string>
+
+    <string name="contact_mechanic">Contact Mechanic</string>
+    <string name="call_direct">Call Direct</string>
+    <string name="send_message">Send Message</string>
+    <string name="contact_options">Contact Options</string>
 </resources>

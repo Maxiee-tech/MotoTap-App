@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.mototap.core.model.JobRequest
 import com.example.mototap.core.model.JobStatus
 import com.example.mototap.core.repository.JobRepository
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,15 +27,24 @@ class MechanicDashboardViewModel(
     val uiState: StateFlow<MechanicUiState> = _uiState.asStateFlow()
 
     init {
+        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
+        
         viewModelScope.launch {
             jobRepository.observeOpenJobs().collectLatest { jobs ->
                 // Filter jobs that are REQUESTED for "New Requests"
                 val newRequests = jobs.filter { it.status == JobStatus.REQUESTED }
-                _uiState.value = _uiState.value.copy(openJobs = newRequests)
+                // Filter jobs ASSIGNED to this mechanic or currently IN_PROGRESS
+                val ongoing = jobs.filter { 
+                    it.mechanicId == currentUserId && 
+                    (it.status == JobStatus.ASSIGNED || it.status == JobStatus.IN_PROGRESS) 
+                }
+                
+                _uiState.value = _uiState.value.copy(
+                    openJobs = newRequests,
+                    ongoingJobs = ongoing
+                )
             }
         }
-        // In a real app, we'd also observe jobs assigned specifically to THIS mechanic.
-        // For simplicity, we'll focus on the "Accept" flow.
     }
 
     fun acceptJob(jobId: String, mechanicId: String) {
@@ -53,6 +63,8 @@ class MechanicDashboardViewModel(
             val result = jobRepository.updateJobStatus(jobId, status)
             if (result.isFailure) {
                 _uiState.value = _uiState.value.copy(infoMessage = "Failed to update status")
+            } else {
+                _uiState.value = _uiState.value.copy(infoMessage = "Status updated to ${status.name}")
             }
         }
     }

@@ -26,6 +26,7 @@ fun MotoTapNavHost(
     val navController = rememberNavController()
     val authViewModel: AuthViewModel = viewModel(
         factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
                 return AuthViewModel(authRepository) as T
             }
@@ -34,6 +35,7 @@ fun MotoTapNavHost(
 
     val mechanicViewModel: MechanicDashboardViewModel = viewModel(
         factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
                 return MechanicDashboardViewModel(jobRepository) as T
             }
@@ -42,6 +44,7 @@ fun MotoTapNavHost(
 
     val driverViewModel: DriverHomeViewModel = viewModel(
         factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
                 return DriverHomeViewModel(authRepository, jobRepository) as T
             }
@@ -55,8 +58,49 @@ fun MotoTapNavHost(
         composable(AppRoute.Splash.route) {
             SplashScreen(
                 onGetStarted = {
-                    navController.navigate(AppRoute.Login.route)
+                    navController.navigate(AppRoute.UserSelection.route)
+                }
+            )
+        }
+
+        composable(AppRoute.UserSelection.route) {
+            UserSelectionScreen(
+                onRequestService = {
+                    val user = FirebaseAuth.getInstance().currentUser
+                    if (user != null) {
+                        authViewModel.checkExistingSession { role ->
+                            if (role == "mechanic") {
+                                navController.navigate(AppRoute.ProviderDashboard.route) {
+                                    popUpTo(AppRoute.UserSelection.route) { inclusive = true }
+                                }
+                            } else {
+                                navController.navigate(AppRoute.CustomerDashboard.route) {
+                                    popUpTo(AppRoute.UserSelection.route) { inclusive = true }
+                                }
+                            }
+                        }
+                    } else {
+                        navController.navigate(AppRoute.Login.route)
+                    }
                 },
+                onProvideService = {
+                    val user = FirebaseAuth.getInstance().currentUser
+                    if (user != null) {
+                        authViewModel.checkExistingSession { role ->
+                            if (role == "mechanic") {
+                                navController.navigate(AppRoute.ProviderDashboard.route) {
+                                    popUpTo(AppRoute.UserSelection.route) { inclusive = true }
+                                }
+                            } else {
+                                navController.navigate(AppRoute.CustomerDashboard.route) {
+                                    popUpTo(AppRoute.UserSelection.route) { inclusive = true }
+                                }
+                            }
+                        }
+                    } else {
+                        navController.navigate(AppRoute.Login.route)
+                    }
+                }
             )
         }
 
@@ -67,17 +111,17 @@ fun MotoTapNavHost(
                     when (role) {
                         "customer" -> {
                             navController.navigate(AppRoute.CustomerDashboard.route) {
-                                popUpTo(AppRoute.Splash.route) { inclusive = true }
+                                popUpTo(AppRoute.Login.route) { inclusive = true }
                             }
                         }
                         "mechanic" -> {
                             navController.navigate(AppRoute.ProviderDashboard.route) {
-                                popUpTo(AppRoute.Splash.route) { inclusive = true }
+                                popUpTo(AppRoute.Login.route) { inclusive = true }
                             }
                         }
                         else -> {
-                            navController.navigate(AppRoute.UserSelection.route) {
-                                popUpTo(AppRoute.Splash.route) { inclusive = true }
+                            navController.navigate(AppRoute.CustomerDashboard.route) {
+                                popUpTo(AppRoute.Login.route) { inclusive = true }
                             }
                         }
                     }
@@ -95,17 +139,17 @@ fun MotoTapNavHost(
                     when (role) {
                         "customer" -> {
                             navController.navigate(AppRoute.CustomerDashboard.route) {
-                                popUpTo(AppRoute.Splash.route) { inclusive = true }
+                                popUpTo(AppRoute.SignUp.route) { inclusive = true }
                             }
                         }
                         "mechanic" -> {
                             navController.navigate(AppRoute.ProviderDashboard.route) {
-                                popUpTo(AppRoute.Splash.route) { inclusive = true }
+                                popUpTo(AppRoute.SignUp.route) { inclusive = true }
                             }
                         }
                         else -> {
-                            navController.navigate(AppRoute.UserSelection.route) {
-                                popUpTo(AppRoute.Splash.route) { inclusive = true }
+                            navController.navigate(AppRoute.CustomerDashboard.route) {
+                                popUpTo(AppRoute.SignUp.route) { inclusive = true }
                             }
                         }
                     }
@@ -115,23 +159,21 @@ fun MotoTapNavHost(
                 }
             )
         }
-        
-        composable(AppRoute.UserSelection.route) {
-            UserSelectionScreen(
-                onRequestService = {
-                    navController.navigate(AppRoute.CustomerDashboard.route)
-                },
-                onProvideService = {
-                    navController.navigate(AppRoute.ProviderDashboard.route)
-                }
-            )
-        }
 
         // Customer Flow
         composable(AppRoute.CustomerDashboard.route) {
             CustomerDashboardScreen(
                 onCategorySelected = { category ->
                     navController.navigate(AppRoute.SubServiceSelection.createRoute(category))
+                },
+                onNavigateToRequests = {
+                    navController.navigate(AppRoute.RequestHistory.route)
+                },
+                onNavigateToMessages = {
+                    navController.navigate(AppRoute.ChatList.route)
+                },
+                onNavigateToProfile = {
+                    navController.navigate(AppRoute.Profile.route)
                 }
             )
         }
@@ -155,8 +197,8 @@ fun MotoTapNavHost(
             RequestServiceScreen(
                 viewModel = driverViewModel,
                 onBack = { navController.popBackStack() },
-                onSubmit = {
-                    navController.navigate(AppRoute.QuotePayment.route)
+                onChatWithMechanic = { mechanicId ->
+                    navController.navigate(AppRoute.Chat.createRoute(mechanicId))
                 }
             )
         }
@@ -171,10 +213,41 @@ fun MotoTapNavHost(
         }
         
         composable(AppRoute.JobTracking.route) {
+            val driverUiState by driverViewModel.uiState.collectAsState()
             JobTrackingScreen(
                 onBack = { navController.popBackStack() },
                 onChat = {
                     navController.navigate(AppRoute.Chat.createRoute("current_job"))
+                },
+                mechanicPhoneNumber = driverUiState.mechanicPhoneNumber
+            )
+        }
+
+        composable(AppRoute.RequestHistory.route) {
+            RequestHistoryScreen(
+                viewModel = driverViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(AppRoute.ChatList.route) {
+            ChatListScreen(
+                chatRepository = chatRepository,
+                onChatSelected = { jobId ->
+                    navController.navigate(AppRoute.Chat.createRoute(jobId))
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(AppRoute.Profile.route) {
+            ProfileScreen(
+                viewModel = authViewModel,
+                onBack = { navController.popBackStack() },
+                onLogout = {
+                    navController.navigate(AppRoute.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
             )
         }
@@ -186,13 +259,24 @@ fun MotoTapNavHost(
                 onBack = { navController.popBackStack() },
                 onSubmitQuote = {
                     navController.navigate(AppRoute.ProviderJobTracking.route)
+                },
+                onNavigateToRequests = {
+                    // Mechanics can use the same history screen to see their jobs
+                    // Or we could create a specialized one. For now, let's use common navigation.
+                    navController.navigate(AppRoute.RequestHistory.route)
+                },
+                onNavigateToMessages = {
+                    navController.navigate(AppRoute.ChatList.route)
+                },
+                onNavigateToProfile = {
+                    navController.navigate(AppRoute.Profile.route)
                 }
             )
         }
         
         composable(AppRoute.ProviderJobTracking.route) {
             val uiState by mechanicViewModel.uiState.collectAsState()
-            val currentJob = uiState.openJobs.firstOrNull() 
+            val currentJob = uiState.ongoingJobs.firstOrNull()
             
             ProviderJobTrackingScreen(
                 job = currentJob,
@@ -214,6 +298,7 @@ fun MotoTapNavHost(
             
             val chatViewModel: ChatViewModel = viewModel(
                 factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
                     override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
                         return ChatViewModel(chatRepository, jobId, currentUserId) as T
                     }

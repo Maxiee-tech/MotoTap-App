@@ -105,6 +105,10 @@ class FirestoreJobRepository(
             ).await()
     }
 
+    override suspend fun deleteJob(jobId: String): Result<Unit> = runCatching {
+        jobs.document(jobId).delete().await()
+    }
+
     private fun DocumentSnapshot.toJobRequestOrNull(): JobRequest? {
         val driverId = getString("driverId") ?: return null
         val issueType = getString("issueType") ?: return null

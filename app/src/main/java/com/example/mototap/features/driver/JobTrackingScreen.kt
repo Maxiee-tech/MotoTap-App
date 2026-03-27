@@ -1,19 +1,23 @@
 package com.example.mototap.features.driver
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -26,14 +30,18 @@ import com.example.mototap.ui.theme.MotoRed
 fun JobTrackingScreen(
     onBack: () -> Unit,
     onChat: () -> Unit,
+    mechanicPhoneNumber: String? = null,
     modifier: Modifier = Modifier,
 ) {
+    var showContactOptions by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = "MOTOTAP",
+                        text = "MOTO TAP",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 2.sp
@@ -49,10 +57,10 @@ fun JobTrackingScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onChat) {
+                    IconButton(onClick = { showContactOptions = true }) {
                         Icon(
                             imageVector = Icons.Default.Email,
-                            contentDescription = "Chat",
+                            contentDescription = "Contact",
                             tint = Color.White
                         )
                     }
@@ -80,7 +88,7 @@ fun JobTrackingScreen(
             Spacer(modifier = Modifier.weight(1f))
 
             Button(
-                onClick = { /* Handle Ensure There */ },
+                onClick = { showContactOptions = true },
                 colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
                 shape = androidx.compose.ui.graphics.RectangleShape,
                 modifier = Modifier
@@ -91,12 +99,49 @@ fun JobTrackingScreen(
                     Icon(Icons.Default.Info, contentDescription = null, tint = Color.White)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Ensure There",
+                        text = stringResource(R.string.contact_mechanic),
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
+        }
+
+        if (showContactOptions) {
+            AlertDialog(
+                onDismissRequest = { showContactOptions = false },
+                title = { Text(stringResource(R.string.contact_options)) },
+                text = { Text("How would you like to reach the mechanic?") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showContactOptions = false
+                        onChat()
+                    }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Email, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.send_message))
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showContactOptions = false
+                        mechanicPhoneNumber?.let {
+                            val intent = Intent(Intent.ACTION_DIAL).apply {
+                                data = Uri.parse("tel:$it")
+                            }
+                            context.startActivity(intent)
+                        }
+                    }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Call, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.call_direct))
+                        }
+                    }
+                }
+            )
         }
     }
 }

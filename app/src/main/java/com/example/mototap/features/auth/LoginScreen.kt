@@ -47,6 +47,17 @@ fun LoginScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
+            text = "MOTO TAP",
+            style = MaterialTheme.typography.headlineLarge.copy(
+                color = MotoRed,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 4.sp
+            ),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.padding(bottom = 32.dp)
+        )
+
+        Text(
             text = stringResource(id = R.string.login_title),
             style = MaterialTheme.typography.headlineMedium.copy(
                 color = Color.White,

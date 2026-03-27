@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.mototap.core.model.JobRequest
+import com.example.mototap.core.model.UserProfile
 import com.example.mototap.core.repository.AuthRepository
 import com.example.mototap.core.repository.JobRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +21,8 @@ data class DriverUiState(
     val locationInput: String = "",
     val priceInput: String = "1000",
     val infoMessage: String? = null,
+    val mechanicPhoneNumber: String? = null,
+    val availableMechanics: List<UserProfile> = emptyList(),
 )
 
 class DriverHomeViewModel(
@@ -31,6 +34,7 @@ class DriverHomeViewModel(
     val uiState: StateFlow<DriverUiState> = _uiState.asStateFlow()
 
     init {
+        loadMechanics()
         viewModelScope.launch {
             authRepository.currentUserId.collectLatest { userId ->
                 _uiState.value = _uiState.value.copy(currentUserId = userId)
@@ -38,8 +42,22 @@ class DriverHomeViewModel(
 
                 jobRepository.observeDriverJobs(userId).collectLatest { jobs ->
                     _uiState.value = _uiState.value.copy(jobs = jobs)
+                    
+                    // Fetch mechanic phone number if a job is active and has a mechanic
+                    val activeJob = jobs.firstOrNull { it.mechanicId != null }
+                    if (activeJob != null) {
+                        val profile = authRepository.getUserProfile(activeJob.mechanicId!!)
+                        _uiState.value = _uiState.value.copy(mechanicPhoneNumber = profile?.phone)
+                    }
                 }
             }
+        }
+    }
+
+    private fun loadMechanics() {
+        viewModelScope.launch {
+            val mechanics = authRepository.getAllMechanics()
+            _uiState.value = _uiState.value.copy(availableMechanics = mechanics)
         }
     }
 
@@ -57,6 +75,12 @@ class DriverHomeViewModel(
 
     fun onPriceChanged(value: String) {
         _uiState.value = _uiState.value.copy(priceInput = value)
+    }
+
+    fun deleteRequest(jobId: String) {
+        viewModelScope.launch {
+            jobRepository.deleteJob(jobId)
+        }
     }
 
     fun submitJob() {

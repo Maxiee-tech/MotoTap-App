@@ -1,10 +1,12 @@
 package com.example.mototap.features.auth
 
 import android.util.Log
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -13,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,6 +33,7 @@ fun SignUpScreen(
     val name by viewModel.name.collectAsState()
     val email by viewModel.email.collectAsState()
     val password by viewModel.password.collectAsState()
+    val phoneNumber by viewModel.phoneNumber.collectAsState()
     val role by viewModel.role.collectAsState()
 
     LaunchedEffect(uiState) {
@@ -147,13 +151,34 @@ fun SignUpScreen(
             )
         }
 
+        AnimatedVisibility(visible = role == "mechanic") {
+            Column {
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = phoneNumber,
+                    onValueChange = { viewModel.phoneNumber.value = it },
+                    label = { Text("Phone Number", color = Color.Gray) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = MotoRed,
+                        unfocusedBorderColor = Color.Gray
+                    )
+                )
+            }
+        }
+
         Button(
             onClick = { viewModel.signUp() },
             enabled = uiState !is AuthUiState.Loading && 
                       name.isNotBlank() && 
                       email.isNotBlank() && 
                       password.isNotBlank() && 
-                      role.isNotBlank(),
+                      role.isNotBlank() &&
+                      (role != "mechanic" || phoneNumber.isNotBlank()),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 32.dp)

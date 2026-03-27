@@ -13,7 +13,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,24 +23,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mototap.R
 import com.example.mototap.ui.theme.MotoRed
-import com.google.firebase.auth.FirebaseAuth
 
 @Composable
 fun SplashScreen(
     onGetStarted: () -> Unit,
-    onAutoNavigate: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Check for existing session on splash
-    LaunchedEffect(Unit) {
-        val currentUser = FirebaseAuth.getInstance().currentUser
-        if (currentUser != null) {
-            // If already logged in, navigate after a short delay
-            // Role fetching will happen in the NavHost via repository
-            onAutoNavigate(currentUser.uid)
-        }
-    }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -51,7 +38,7 @@ fun SplashScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "MOTOTAP",
+            text = "MOTO TAP",
             style = MaterialTheme.typography.headlineLarge.copy(
                 color = MotoRed,
                 fontWeight = FontWeight.Bold,

@@ -20,4 +20,6 @@ interface JobRepository {
     suspend fun updateJobStatus(jobId: String, status: JobStatus): Result<Unit>
     
     suspend fun acceptJob(jobId: String, mechanicId: String): Result<Unit>
+
+    suspend fun deleteJob(jobId: String): Result<Unit>
 }
