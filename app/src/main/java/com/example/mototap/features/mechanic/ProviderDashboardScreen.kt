@@ -1,11 +1,19 @@
 package com.example.mototap.features.mechanic
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,8 +44,7 @@ fun ProviderDashboardScreen(
     val uiState by viewModel.uiState.collectAsState()
     val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
 
-    var newRequestsActive by remember { mutableStateOf(true) }
-    var ongoingJobsActive by remember { mutableStateOf(true) }
+    var showServiceSelection by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -54,14 +61,14 @@ fun ProviderDashboardScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = stringResource(R.string.provider_dashboard),
+                        text = if (showServiceSelection) "CHOOSE SERVICES" else stringResource(R.string.provider_dashboard),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { if (showServiceSelection) showServiceSelection = false else onBack() }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
@@ -70,12 +77,14 @@ fun ProviderDashboardScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { }) {
-                        Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = "Notifications",
-                            tint = Color.White
-                        )
+                    if (!showServiceSelection) {
+                        IconButton(onClick = { showServiceSelection = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Build,
+                                contentDescription = "Manage Services",
+                                tint = Color.White
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -97,115 +106,352 @@ fun ProviderDashboardScreen(
         },
         containerColor = Color.Black
     ) { paddingValues ->
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-        ) {
-            LazyColumn(
-                modifier = Modifier.weight(1f)
+        if (showServiceSelection) {
+            MechanicServiceSelection(
+                selectedSkills = uiState.selectedSkills,
+                onSkillToggled = { viewModel.toggleSkill(it) },
+                modifier = Modifier.padding(paddingValues)
+            )
+        } else {
+            Column(
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(16.dp)
             ) {
-                item {
-                    ToggleRow(stringResource(R.string.new_requests), newRequestsActive) { newRequestsActive = it }
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MotoRed.copy(alpha = 0.1f)),
+                            onClick = { showServiceSelection = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Build, contentDescription = null, tint = MotoRed)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column {
+                                    Text(
+                                        text = "SERVICES YOU OFFER",
+                                        color = MotoRed,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        text = "${uiState.selectedSkills.size} services selected",
+                                        color = Color.White,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text("EDIT", color = MotoRed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
 
-                if (newRequestsActive) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.new_requests),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+
                     if (uiState.openJobs.isEmpty()) {
                         item {
-                            Text(
-                                "No new requests available",
-                                color = Color.Gray,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                            )
+                            Box(
+                                modifier = Modifier.fillMaxWidth().height(100.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (uiState.selectedSkills.isEmpty()) 
+                                        "Select services to see matching requests" 
+                                        else "No matching requests nearby",
+                                    color = Color.Gray,
+                                    fontSize = 14.sp
+                                )
+                            }
                         }
                     } else {
-                        items(uiState.openJobs) { job ->
+                        items(uiState.openJobs, key = { it.id }) { job ->
                             RequestItem(
                                 label = "${job.issueType} - ${job.locationLabel}",
                                 actionText = "ACCEPT",
                                 onActionClick = { viewModel.acceptJob(job.id, currentUserId) }
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
-                }
 
-                item {
-                    Spacer(modifier = Modifier.height(24.dp))
-                    ToggleRow(stringResource(R.string.ongoing_jobs), ongoingJobsActive) { ongoingJobsActive = it }
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.ongoing_jobs),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
 
-                if (ongoingJobsActive) {
                     if (uiState.ongoingJobs.isEmpty()) {
                         item {
-                            Text(
-                                "No ongoing jobs",
-                                color = Color.Gray,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                            )
+                            Box(
+                                modifier = Modifier.fillMaxWidth().height(60.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No ongoing jobs",
+                                    color = Color.Gray,
+                                    fontSize = 14.sp
+                                )
+                            }
                         }
                     } else {
-                        items(uiState.ongoingJobs) { job ->
+                        items(uiState.ongoingJobs, key = { it.id }) { job ->
                             RequestItem(
                                 label = "${job.issueType} (${job.status})",
                                 actionText = "VIEW",
-                                onActionClick = { onSubmitQuote() } // Assuming this navigates to tracking/details
+                                onActionClick = { onSubmitQuote() }
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Status Actions for the first ongoing job
-            val firstJob = uiState.ongoingJobs.firstOrNull()
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                DashboardButton(
-                    text = stringResource(R.string.on_the_way),
-                    onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.MATCHING) } },
-                    enabled = firstJob != null && firstJob.status == JobStatus.ASSIGNED
-                )
-                DashboardButton(
-                    text = stringResource(R.string.in_progress),
-                    onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.IN_PROGRESS) } },
-                    enabled = firstJob != null && (firstJob.status == JobStatus.ASSIGNED || firstJob.status == JobStatus.MATCHING)
-                )
-                DashboardButton(
-                    text = stringResource(R.string.complete),
-                    onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.COMPLETED) } },
-                    enabled = firstJob != null && firstJob.status == JobStatus.IN_PROGRESS
-                )
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Status Actions for the first ongoing job
+                val firstJob = uiState.ongoingJobs.firstOrNull()
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DashboardButton(
+                        text = stringResource(R.string.on_the_way),
+                        onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.MATCHING) } },
+                        enabled = firstJob != null && firstJob.status == JobStatus.ASSIGNED
+                    )
+                    DashboardButton(
+                        text = stringResource(R.string.in_progress),
+                        onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.IN_PROGRESS) } },
+                        enabled = firstJob != null && (firstJob.status == JobStatus.ASSIGNED || firstJob.status == JobStatus.MATCHING)
+                    )
+                    DashboardButton(
+                        text = stringResource(R.string.complete),
+                        onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.COMPLETED) } },
+                        enabled = firstJob != null && firstJob.status == JobStatus.IN_PROGRESS
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-fun ToggleRow(label: String, isActive: Boolean, onToggle: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(text = label, color = Color.Black, fontWeight = FontWeight.Bold)
-        Switch(
-            checked = isActive,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = MotoRed,
-                checkedTrackColor = MotoRed.copy(alpha = 0.5f),
-                uncheckedThumbColor = Color.Gray,
-                uncheckedTrackColor = Color.LightGray
+fun MechanicServiceSelection(
+    selectedSkills: List<String>,
+    onSkillToggled: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val categories = listOf(
+        ServiceCategory(
+            title = stringResource(R.string.road_assistance),
+            services = listOf(
+                stringResource(R.string.jumpstart),
+                stringResource(R.string.fuel_delivery),
+                stringResource(R.string.lockout_assistance)
+            )
+        ),
+        ServiceCategory(
+            title = stringResource(R.string.towing_services),
+            services = listOf(
+                stringResource(R.string.flatbed_towing),
+                stringResource(R.string.wheel_lift_towing),
+                stringResource(R.string.dolly_towing),
+                stringResource(R.string.accident_towing),
+                stringResource(R.string.breakdown_towing),
+                stringResource(R.string.long_distance_towing),
+                stringResource(R.string.off_road_recovery),
+                stringResource(R.string.motorcycle_towing),
+                stringResource(R.string.heavy_vehicle_towing),
+                stringResource(R.string.low_clearance_towing)
+            )
+        ),
+        ServiceCategory(
+            title = stringResource(R.string.mobile_mechanic),
+            services = listOf(
+                stringResource(R.string.onsite_diagnostics),
+                stringResource(R.string.battery_electrical_check),
+                stringResource(R.string.engine_fault_id),
+                stringResource(R.string.battery_replacement),
+                stringResource(R.string.spark_plug_replacement),
+                stringResource(R.string.belt_replacement),
+                stringResource(R.string.hose_leak_fixes),
+                stringResource(R.string.overheating_assistance),
+                stringResource(R.string.brake_fix_temporary),
+                stringResource(R.string.engine_wont_start),
+                stringResource(R.string.oil_topup_change),
+                stringResource(R.string.coolant_refill),
+                stringResource(R.string.brake_fluid_topup),
+                stringResource(R.string.puncture_repair),
+                stringResource(R.string.tire_change)
+            )
+        ),
+        ServiceCategory(
+            title = stringResource(R.string.garage_services),
+            services = listOf(
+                stringResource(R.string.engine_overhaul),
+                stringResource(R.string.timing_belt_replacement),
+                stringResource(R.string.fuel_system_repair),
+                stringResource(R.string.exhaust_system_repair),
+                stringResource(R.string.gearbox_repair),
+                stringResource(R.string.clutch_replacement),
+                stringResource(R.string.transmission_fluid_service),
+                stringResource(R.string.brake_pad_replacement),
+                stringResource(R.string.disc_skimming),
+                stringResource(R.string.full_brake_system_repair),
+                stringResource(R.string.shock_absorber_replacement),
+                stringResource(R.string.steering_rack_repair),
+                stringResource(R.string.wheel_alignment),
+                stringResource(R.string.wiring_overhaul),
+                stringResource(R.string.ecu_repair),
+                stringResource(R.string.alternator_starter_repair),
+                stringResource(R.string.ac_repair_servicing),
+                stringResource(R.string.radiator_repair),
+                stringResource(R.string.cooling_system_flush)
+            )
+        ),
+        ServiceCategory(
+            title = stringResource(R.string.car_wash),
+            services = listOf(
+                stringResource(R.string.exterior_wash),
+                stringResource(R.string.interior_vacuum),
+                stringResource(R.string.tire_cleaning),
+                stringResource(R.string.exterior_interior_cleaning),
+                stringResource(R.string.dashboard_polish),
+                stringResource(R.string.window_cleaning),
+                stringResource(R.string.full_car_detailing),
+                stringResource(R.string.engine_cleaning),
+                stringResource(R.string.underbody_wash),
+                stringResource(R.string.seat_shampoo),
+                stringResource(R.string.leather_conditioning),
+                stringResource(R.string.odor_removal),
+                stringResource(R.string.waxing_polishing),
+                stringResource(R.string.ceramic_coating),
+                stringResource(R.string.headlight_restoration)
             )
         )
+    )
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Text(
+                text = "Select the services you can offer. Requests matching these will appear in your queue.",
+                color = Color.LightGray,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
+        
+        items(categories) { category ->
+            ExpandableCategory(
+                category = category,
+                selectedSkills = selectedSkills,
+                onSkillToggled = onSkillToggled
+            )
+        }
+    }
+}
+
+data class ServiceCategory(val title: String, val services: List<String>)
+
+@Composable
+fun ExpandableCategory(
+    category: ServiceCategory,
+    selectedSkills: List<String>,
+    onSkillToggled: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedInCategory = category.services.count { selectedSkills.contains(it) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF1A1A1A), RoundedCornerShape(8.dp))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = category.title.uppercase(),
+                    color = if (selectedInCategory > 0) MotoRed else Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                if (selectedInCategory > 0) {
+                    Text(
+                        text = "$selectedInCategory selected",
+                        color = MotoRed.copy(alpha = 0.7f),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                tint = Color.Gray
+            )
+        }
+
+        if (expanded) {
+            Column(modifier = Modifier.padding(bottom = 8.dp)) {
+                category.services.forEach { service ->
+                    val isSelected = selectedSkills.contains(service)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSkillToggled(service) }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = service,
+                            color = if (isSelected) Color.White else Color.Gray,
+                            fontSize = 14.sp,
+                            fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
+                        )
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MotoRed,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .background(Color.Transparent, CircleShape)
+                                    .border(1.dp, Color.DarkGray, CircleShape)
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -214,7 +460,7 @@ fun RequestItem(label: String, actionText: String, onActionClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.DarkGray.copy(alpha = 0.3f))
+            .background(Color.DarkGray.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
             .padding(12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -227,7 +473,7 @@ fun RequestItem(label: String, actionText: String, onActionClick: () -> Unit) {
         Button(
             onClick = onActionClick,
             colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
-            shape = androidx.compose.ui.graphics.RectangleShape,
+            shape = RoundedCornerShape(4.dp),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
             modifier = Modifier.height(32.dp)
         ) {
@@ -245,7 +491,7 @@ fun DashboardButton(text: String, onClick: () -> Unit, enabled: Boolean = true) 
             containerColor = MotoRed,
             disabledContainerColor = Color.DarkGray
         ),
-        shape = androidx.compose.ui.graphics.RectangleShape,
+        shape = RoundedCornerShape(4.dp),
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)

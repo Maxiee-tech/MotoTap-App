@@ -80,7 +80,14 @@ fun RequestServiceScreen(
                 items(uiState.availableMechanics) { mechanic ->
                     MechanicContactCard(
                         mechanic = mechanic,
-                        onMessageClick = { onChatWithMechanic(mechanic.id) },
+                        onMessageClick = { 
+                            // Fixed: Using SMS Intent to message the mechanic directly, 
+                            // consistent with the "Call Direct" functionality.
+                            val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                data = Uri.parse("smsto:${mechanic.phone}")
+                            }
+                            context.startActivity(intent)
+                        },
                         onCallClick = {
                             val intent = Intent(Intent.ACTION_DIAL).apply {
                                 data = Uri.parse("tel:${mechanic.phone}")
@@ -129,7 +136,11 @@ fun MechanicContactCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Professional Mechanic",
+                        text = if (mechanic.skills.isNotEmpty()) {
+                            mechanic.skills.joinToString(", ").take(30) + if (mechanic.skills.joinToString(", ").length > 30) "..." else ""
+                        } else {
+                            "Professional Mechanic"
+                        },
                         color = Color.Gray,
                         fontSize = 14.sp
                     )

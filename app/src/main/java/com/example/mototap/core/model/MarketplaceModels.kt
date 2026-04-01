@@ -21,6 +21,7 @@ data class UserProfile(
     val name: String,
     val phone: String,
     val role: UserRole,
+    val skills: List<String> = emptyList(),
 )
 
 data class MechanicProfile(
@@ -59,4 +60,3 @@ data class PaymentRecord(
     val status: String,
     val mpesaReceipt: String?,
 )
-

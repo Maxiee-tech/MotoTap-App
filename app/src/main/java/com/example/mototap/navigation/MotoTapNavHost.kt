@@ -37,7 +37,7 @@ fun MotoTapNavHost(
         factory = object : androidx.lifecycle.ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                return MechanicDashboardViewModel(jobRepository) as T
+                return MechanicDashboardViewModel(authRepository, jobRepository) as T
             }
         }
     )
@@ -223,6 +223,7 @@ fun MotoTapNavHost(
             )
         }
 
+        // Reuse the same History/Requests screen for both roles
         composable(AppRoute.RequestHistory.route) {
             RequestHistoryScreen(
                 viewModel = driverViewModel,
@@ -246,7 +247,12 @@ fun MotoTapNavHost(
                 onBack = { navController.popBackStack() },
                 onLogout = {
                     navController.navigate(AppRoute.Login.route) {
-                        popUpTo(0) { inclusive = true }
+                        popUpTo(navController.graph.id) { inclusive = true }
+                    }
+                },
+                onDeleteSuccess = {
+                    navController.navigate(AppRoute.Login.route) {
+                        popUpTo(navController.graph.id) { inclusive = true }
                     }
                 }
             )
@@ -261,8 +267,6 @@ fun MotoTapNavHost(
                     navController.navigate(AppRoute.ProviderJobTracking.route)
                 },
                 onNavigateToRequests = {
-                    // Mechanics can use the same history screen to see their jobs
-                    // Or we could create a specialized one. For now, let's use common navigation.
                     navController.navigate(AppRoute.RequestHistory.route)
                 },
                 onNavigateToMessages = {

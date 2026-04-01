@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mototap.features.auth.AuthUiState
@@ -31,14 +32,61 @@ fun ProfileScreen(
     viewModel: AuthViewModel,
     onBack: () -> Unit,
     onLogout: () -> Unit,
+    onDeleteSuccess: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val userProfile by viewModel.userProfile.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var deletePassword by remember { mutableStateOf("") }
+    var isDeleting by remember { mutableStateOf(false) }
+    var hasNavigatedAfterDelete by remember { mutableStateOf(false) }
+    var currentUserId by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser?.uid) }
+
+    val accountOwnerName = remember(userProfile, currentUserId) {
+        userProfile?.name
+            ?.takeIf { it.isNotBlank() }
+            ?: FirebaseAuth.getInstance().currentUser?.displayName
+                ?.takeIf { it.isNotBlank() }
+            ?: FirebaseAuth.getInstance().currentUser?.email
+                ?.substringBefore("@")
+                ?.takeIf { it.isNotBlank() }
+            ?: "Account Owner"
+    }
 
     LaunchedEffect(Unit) {
         viewModel.fetchUserProfile()
+    }
+
+    DisposableEffect(Unit) {
+        val auth = FirebaseAuth.getInstance()
+        val listener = FirebaseAuth.AuthStateListener {
+            currentUserId = it.currentUser?.uid
+        }
+        auth.addAuthStateListener(listener)
+        onDispose { auth.removeAuthStateListener(listener) }
+    }
+
+    // Fetch profile whenever auth user becomes available (or changes)
+    LaunchedEffect(currentUserId) {
+        if (currentUserId != null) {
+            viewModel.fetchUserProfile()
+        }
+    }
+
+    LaunchedEffect(uiState, isDeleting) {
+        if (isDeleting && uiState is AuthUiState.Error) {
+            isDeleting = false
+        }
+    }
+
+    LaunchedEffect(isDeleting, currentUserId, hasNavigatedAfterDelete) {
+        if (isDeleting && currentUserId == null && !hasNavigatedAfterDelete) {
+            hasNavigatedAfterDelete = true
+            isDeleting = false
+            viewModel.resetState()
+            onDeleteSuccess()
+        }
     }
 
     Scaffold(
@@ -92,7 +140,7 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = userProfile?.name ?: "Loading...",
+                text = accountOwnerName,
                 color = Color.White,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold
@@ -138,6 +186,7 @@ fun ProfileScreen(
                         onLogout()
                     }
                 },
+                enabled = !isDeleting,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -160,6 +209,7 @@ fun ProfileScreen(
             // Delete Account Button
             Button(
                 onClick = { showDeleteDialog = true },
+                enabled = !isDeleting,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -180,31 +230,61 @@ fun ProfileScreen(
 
         if (showDeleteDialog) {
             AlertDialog(
-                onDismissRequest = { showDeleteDialog = false },
+                onDismissRequest = {
+                    showDeleteDialog = false
+                    deletePassword = ""
+                },
                 title = { Text("Delete Account?") },
-                text = { Text("This action is permanent and cannot be undone. All your data will be removed.") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("This action is permanent and cannot be undone. All your data will be removed.")
+                        OutlinedTextField(
+                            value = deletePassword,
+                            onValueChange = { deletePassword = it },
+                            label = { Text("Current Password") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            enabled = !isDeleting,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
                 confirmButton = {
                     Button(
                         onClick = {
                             showDeleteDialog = false
-                            viewModel.deleteAccount {
-                                onLogout() // Redirect to login after deletion
+                            isDeleting = true
+                            hasNavigatedAfterDelete = false
+                            viewModel.deleteAccount(deletePassword) {
+                                deletePassword = ""
+                                if (!hasNavigatedAfterDelete) {
+                                    hasNavigatedAfterDelete = true
+                                    isDeleting = false
+                                    onDeleteSuccess()
+                                }
                             }
                         },
+                        enabled = deletePassword.isNotBlank() && !isDeleting,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0000))
                     ) {
                         Text("DELETE", fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDeleteDialog = false }) {
+                    TextButton(
+                        onClick = {
+                            showDeleteDialog = false
+                            deletePassword = ""
+                        },
+                        enabled = !isDeleting
+                    ) {
                         Text("CANCEL")
                     }
                 }
             )
         }
 
-        if (uiState is AuthUiState.Loading) {
+        if (isDeleting) {
             Box(
                 modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)),
                 contentAlignment = Alignment.Center

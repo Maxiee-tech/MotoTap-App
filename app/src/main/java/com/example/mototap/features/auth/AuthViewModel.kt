@@ -43,15 +43,23 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
                 val userId = FirebaseAuth.getInstance().currentUser?.uid
                 Log.d("AuthViewModel", "signIn success, fetching role for $userId with timeout")
                 
-                val userRole = withTimeoutOrNull(5000) {
+                // Increased timeout to 15s to be more robust on slower networks
+                val userRole = withTimeoutOrNull(15000) {
                     userId?.let { authRepository.getUserRole(it) }
                 }
                 
                 Log.d("AuthViewModel", "role result: $userRole")
                 _uiState.value = AuthUiState.Success(userRole)
             } else {
-                val errorMsg = result.exceptionOrNull()?.message ?: "Login failed"
-                Log.e("AuthViewModel", "signIn failed: $errorMsg")
+                val rawError = result.exceptionOrNull()?.message ?: ""
+                val errorMsg = if (rawError.contains("credential", ignoreCase = true) || 
+                                 rawError.contains("password", ignoreCase = true) ||
+                                 rawError.contains("user", ignoreCase = true)) {
+                    "Wrong Email or Password."
+                } else {
+                    "Login failed. Please check your connection."
+                }
+                Log.e("AuthViewModel", "signIn failed: $rawError")
                 _uiState.value = AuthUiState.Error(errorMsg)
             }
         }
@@ -62,25 +70,40 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
             Log.d("AuthViewModel", "signUp started for ${email.value}")
             _uiState.value = AuthUiState.Loading
             
-            // Add timeout to the entire signUp process
-            val success = withTimeoutOrNull(10000) {
-                val result = authRepository.signUp(
-                    email.value, 
-                    password.value, 
-                    name.value, 
-                    role.value,
-                    if (role.value == "mechanic") phoneNumber.value else null
-                )
-                result.isSuccess
-            } ?: false
+            try {
+                // Increased timeout to 30 seconds to accommodate double Firebase operations (Auth + Firestore)
+                val result = withTimeoutOrNull(30000) {
+                    authRepository.signUp(
+                        email.value, 
+                        password.value, 
+                        name.value, 
+                        role.value,
+                        phoneNumber.value // Now always passing phoneNumber for both roles
+                    )
+                }
 
-            if (success) {
-                Log.d("AuthViewModel", "signUp success, navigating with role ${role.value}")
-                _uiState.value = AuthUiState.Success(role.value)
-            } else {
-                val errorMsg = "Sign up failed or timed out. Please check your connection."
-                Log.e("AuthViewModel", errorMsg)
-                _uiState.value = AuthUiState.Error(errorMsg)
+                if (result == null) {
+                    val errorMsg = "Sign up timed out. Please check your connection and try again."
+                    Log.e("AuthViewModel", errorMsg)
+                    _uiState.value = AuthUiState.Error(errorMsg)
+                } else if (result.isSuccess) {
+                    Log.d("AuthViewModel", "signUp success, navigating with role ${role.value}")
+                    _uiState.value = AuthUiState.Success(role.value)
+                } else {
+                    val rawError = result.exceptionOrNull()?.message ?: ""
+                    val errorMsg = when {
+                        rawError.contains("email", ignoreCase = true) && rawError.contains("already", ignoreCase = true) -> 
+                            "This email is already registered."
+                        rawError.contains("network", ignoreCase = true) -> 
+                            "Network error. Please check your connection."
+                        else -> "Sign up failed: $rawError"
+                    }
+                    Log.e("AuthViewModel", "signUp failed: $rawError")
+                    _uiState.value = AuthUiState.Error(errorMsg)
+                }
+            } catch (e: Exception) {
+                Log.e("AuthViewModel", "signUp exception: ${e.message}")
+                _uiState.value = AuthUiState.Error("An unexpected error occurred during sign up.")
             }
         }
     }
@@ -90,7 +113,8 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
         if (userId != null) {
             viewModelScope.launch {
                 Log.d("AuthViewModel", "Existing session found for $userId, fetching role...")
-                val userRole = withTimeoutOrNull(5000) {
+                // Increased timeout to 15s
+                val userRole = withTimeoutOrNull(15000) {
                     authRepository.getUserRole(userId)
                 }
                 Log.d("AuthViewModel", "Session role: $userRole")
@@ -103,7 +127,10 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
         val userId = FirebaseAuth.getInstance().currentUser?.uid
         if (userId != null) {
             viewModelScope.launch {
-                val profile = authRepository.getUserProfile(userId)
+                // Increased timeout to 15s
+                val profile = withTimeoutOrNull(15000) {
+                    authRepository.getUserProfile(userId)
+                }
                 _userProfile.value = profile
             }
         }
@@ -111,22 +138,40 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
 
     fun logout(onSuccess: () -> Unit) {
         viewModelScope.launch {
-            authRepository.signOut()
+            try {
+                authRepository.signOut()
+            } catch (e: Exception) {
+                Log.e("AuthViewModel", "Error during logout: ${e.message}")
+            }
             _userProfile.value = null
+            _uiState.value = AuthUiState.Idle
             onSuccess()
         }
     }
 
-    fun deleteAccount(onSuccess: () -> Unit) {
+    fun deleteAccount(currentPassword: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
+            if (currentPassword.isBlank()) {
+                _uiState.value = AuthUiState.Error("Enter your current password to delete your account.")
+                return@launch
+            }
+
+            Log.d("AuthViewModel", "deleteAccount started")
             _uiState.value = AuthUiState.Loading
-            val result = authRepository.deleteAccount()
-            if (result.isSuccess) {
+            
+            val result = withTimeoutOrNull(20000) {
+                authRepository.deleteAccount(currentPassword)
+            }
+
+            if (result != null && result.isSuccess) {
+                Log.d("AuthViewModel", "deleteAccount success")
                 _userProfile.value = null
                 _uiState.value = AuthUiState.Idle
                 onSuccess()
             } else {
-                _uiState.value = AuthUiState.Error(result.exceptionOrNull()?.message ?: "Failed to delete account")
+                val errorMsg = result?.exceptionOrNull()?.message ?: "Account deletion timed out. Please try again."
+                Log.e("AuthViewModel", "deleteAccount failed: $errorMsg")
+                _uiState.value = AuthUiState.Error(errorMsg)
             }
         }
     }

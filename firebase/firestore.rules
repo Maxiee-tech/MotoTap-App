@@ -9,7 +9,7 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.auth.uid == userId;
       allow update: if isSignedIn() && request.auth.uid == userId;
-      allow delete: if false;
+      allow delete: if isSignedIn() && request.auth.uid == userId;
     }
 
     match /mechanics/{mechanicId} {
@@ -21,7 +21,7 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.driverId == request.auth.uid;
       allow read: if isSignedIn();
       allow update: if isSignedIn();
-      allow delete: if false;
+      allow delete: if isSignedIn() && (resource.data.driverId == request.auth.uid || resource.data.mechanicId == request.auth.uid);
     }
 
     match /chats/{chatId}/messages/{messageId} {
@@ -34,4 +34,3 @@ service cloud.firestore {
     }
   }
 }
-

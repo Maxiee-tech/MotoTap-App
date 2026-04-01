@@ -1,5 +1,6 @@
 package com.example.mototap.core.data.firebase
 
+import android.util.Log
 import com.example.mototap.core.model.JobRequest
 import com.example.mototap.core.model.JobStatus
 import com.example.mototap.core.repository.JobRepository
@@ -46,7 +47,8 @@ class FirestoreJobRepository(
             .orderBy("createdAtMillis", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    close(error)
+                    Log.e("FirestoreJobRepo", "Error observing driver jobs: ${error.message}")
+                    trySend(emptyList()) // Send empty list instead of crashing
                     return@addSnapshotListener
                 }
 
@@ -74,7 +76,8 @@ class FirestoreJobRepository(
             .orderBy("createdAtMillis", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    close(error)
+                    Log.e("FirestoreJobRepo", "Error observing open jobs: ${error.message}")
+                    trySend(emptyList()) // Send empty list instead of crashing
                     return@addSnapshotListener
                 }
 

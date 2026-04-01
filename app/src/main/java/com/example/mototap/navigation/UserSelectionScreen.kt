@@ -61,7 +61,7 @@ fun UserSelectionScreen(
                     .height(56.dp)
             ) {
                 Text(
-                    text = stringResource(id = R.string.request_service),
+                    text = "Request Service (Driver)",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
@@ -79,7 +79,7 @@ fun UserSelectionScreen(
                     .height(56.dp)
             ) {
                 Text(
-                    text = stringResource(id = R.string.provide_service),
+                    text = "Provide Service (Mechanic)",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp

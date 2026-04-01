@@ -20,5 +20,7 @@ interface AuthRepository {
 
     suspend fun getAllMechanics(): List<UserProfile>
 
-    suspend fun deleteAccount(): Result<Unit>
+    suspend fun deleteAccount(currentPassword: String): Result<Unit>
+
+    suspend fun updateMechanicSkills(userId: String, skills: List<String>): Result<Unit>
 }

@@ -1,57 +1,103 @@
 package com.example.mototap.features.mechanic
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.mototap.core.model.JobRequest
+import com.example.mototap.features.driver.BottomNavigationBar
+import com.example.mototap.ui.theme.MotoRed
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MechanicDashboardScreen(
     state: MechanicUiState,
     onAccept: (String) -> Unit,
     onStart: (String) -> Unit,
+    onNavigateToRequests: () -> Unit = {},
+    onNavigateToMessages: () -> Unit = {},
+    onNavigateToProfile: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(vertical = 16.dp),
-    ) {
-        item {
-            Text(
-                text = "Mechanic Queue",
-                style = MaterialTheme.typography.headlineSmall,
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {
+                    Text(
+                        text = "MOTO TAP",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp
+                    )
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MotoRed
+                )
             )
-        }
-        state.infoMessage?.let { message ->
+        },
+        bottomBar = {
+            BottomNavigationBar(
+                currentRoute = "home",
+                onNavigate = { route ->
+                    when(route) {
+                        "requests" -> onNavigateToRequests()
+                        "messages" -> onNavigateToMessages()
+                        "profile" -> onNavigateToProfile()
+                    }
+                }
+            )
+        },
+        containerColor = Color.Black
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             item {
                 Text(
-                    text = message,
-                    color = MaterialTheme.colorScheme.primary,
+                    text = "MECHANIC QUEUE",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
             }
-        }
-        items(state.openJobs, key = { it.id }) { job ->
-            MechanicJobCard(
-                job = job,
-                onAccept = onAccept,
-                onStart = onStart,
-            )
+
+            if (state.openJobs.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(200.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No pending requests nearby", color = Color.Gray)
+                    }
+                }
+            }
+
+            items(state.openJobs, key = { it.id }) { job ->
+                MechanicJobCard(
+                    job = job,
+                    onAccept = onAccept,
+                    onStart = onStart,
+                )
+            }
         }
     }
 }
@@ -62,26 +108,70 @@ private fun MechanicJobCard(
     onAccept: (String) -> Unit,
     onStart: (String) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.DarkGray)
+    ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(text = job.issueType, style = MaterialTheme.typography.titleSmall)
-            Text(text = "Location: ${job.locationLabel}")
-            Text(text = "Status: ${job.status.name}")
-            Text(text = "Offer: KES ${job.price}")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onAccept(job.id) }) {
-                    Text("Accept")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Build, contentDescription = null, tint = MotoRed, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = job.issueType,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
                 }
-                Button(onClick = { onStart(job.id) }) {
-                    Text("Start")
+                Text(
+                    text = "KES ${job.price}",
+                    color = MotoRed,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = job.locationLabel, color = Color.LightGray, fontSize = 14.sp)
+            }
+
+            HorizontalDivider(color = Color.DarkGray, thickness = 0.5.dp)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { onAccept(job.id) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("ACCEPT")
+                }
+                
+                Button(
+                    onClick = { onStart(job.id) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("START", fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
 }
-

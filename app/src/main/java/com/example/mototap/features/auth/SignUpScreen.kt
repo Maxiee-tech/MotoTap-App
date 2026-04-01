@@ -115,6 +115,23 @@ fun SignUpScreen(
             )
         )
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = phoneNumber,
+            onValueChange = { viewModel.phoneNumber.value = it },
+            label = { Text("Phone Number", color = Color.Gray) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            modifier = Modifier.fillMaxWidth(),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = MotoRed,
+                unfocusedBorderColor = Color.Gray
+            )
+        )
+
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
@@ -134,7 +151,7 @@ fun SignUpScreen(
                 colors = RadioButtonDefaults.colors(selectedColor = MotoRed, unselectedColor = Color.Gray)
             )
             Text(
-                text = "Client / User",
+                text = "Driver",
                 color = Color.White,
                 modifier = Modifier.clickable { viewModel.role.value = "customer" }
             )
@@ -151,34 +168,14 @@ fun SignUpScreen(
             )
         }
 
-        AnimatedVisibility(visible = role == "mechanic") {
-            Column {
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedTextField(
-                    value = phoneNumber,
-                    onValueChange = { viewModel.phoneNumber.value = it },
-                    label = { Text("Phone Number", color = Color.Gray) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = MotoRed,
-                        unfocusedBorderColor = Color.Gray
-                    )
-                )
-            }
-        }
-
         Button(
             onClick = { viewModel.signUp() },
             enabled = uiState !is AuthUiState.Loading && 
                       name.isNotBlank() && 
                       email.isNotBlank() && 
                       password.isNotBlank() && 
-                      role.isNotBlank() &&
-                      (role != "mechanic" || phoneNumber.isNotBlank()),
+                      phoneNumber.isNotBlank() &&
+                      role.isNotBlank(),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 32.dp)

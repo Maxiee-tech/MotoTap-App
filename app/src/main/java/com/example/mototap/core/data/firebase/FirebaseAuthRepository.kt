@@ -5,6 +5,8 @@ import com.example.mototap.core.model.UserProfile
 import com.example.mototap.core.model.UserRole
 import com.example.mototap.core.repository.AuthRepository
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.EmailAuthProvider
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.channels.awaitClose
@@ -44,7 +46,7 @@ class FirebaseAuthRepository(
 
     override suspend fun signUp(email: String, password: String, name: String, role: String, phoneNumber: String?): Result<Unit> {
         return try {
-            Log.d("FirebaseAuthRepo", "Attempting signUp for $email")
+            Log.d("FirebaseAuthRepo", "Attempting signUp for $email with role: $role")
             val result = auth.createUserWithEmailAndPassword(email, password).await()
             val userId = result.user?.uid ?: throw Exception("User creation failed")
             Log.d("FirebaseAuthRepo", "Auth user created: $userId. Saving to Firestore...")
@@ -53,7 +55,7 @@ class FirebaseAuthRepository(
                 "uid" to userId,
                 "name" to name,
                 "email" to email,
-                "role" to role
+                "role" to role.lowercase().trim() // Normalize role
             )
             phoneNumber?.let { userMap["phoneNumber"] = it }
 
@@ -68,15 +70,23 @@ class FirebaseAuthRepository(
     }
 
     override suspend fun signOut() {
-        auth.signOut()
+        try {
+            auth.signOut()
+        } catch (e: Exception) {
+            Log.e("FirebaseAuthRepo", "signOut error: ${e.message}")
+        }
     }
 
     override suspend fun getUserRole(userId: String): String? {
         return try {
             Log.d("FirebaseAuthRepo", "Fetching role for $userId")
             val document = firestore.collection("users").document(userId).get().await()
-            val role = document.getString("role")
-            Log.d("FirebaseAuthRepo", "Role fetched: $role")
+            if (!document.exists()) {
+                Log.w("FirebaseAuthRepo", "User document does not exist for $userId")
+                return null
+            }
+            val role = document.getString("role")?.lowercase()?.trim()
+            Log.d("FirebaseAuthRepo", "Role fetched and normalized: $role")
             role
         } catch (e: Exception) {
             Log.e("FirebaseAuthRepo", "getUserRole error: ${e.message}")
@@ -87,12 +97,16 @@ class FirebaseAuthRepository(
     override suspend fun getUserProfile(userId: String): UserProfile? {
         return try {
             val document = firestore.collection("users").document(userId).get().await()
+            if (!document.exists()) return null
+            
             val name = document.getString("name") ?: ""
             val phone = document.getString("phoneNumber") ?: ""
-            val roleStr = document.getString("role") ?: "customer"
-            val role = if (roleStr.lowercase() == "mechanic") UserRole.MECHANIC else UserRole.DRIVER
+            val roleStr = document.getString("role")?.lowercase()?.trim() ?: "customer"
+            val role = if (roleStr == "mechanic") UserRole.MECHANIC else UserRole.DRIVER
+            @Suppress("UNCHECKED_CAST")
+            val skills = document.get("skills") as? List<String> ?: emptyList()
             
-            UserProfile(id = userId, name = name, phone = phone, role = role)
+            UserProfile(id = userId, name = name, phone = phone, role = role, skills = skills)
         } catch (e: Exception) {
             Log.e("FirebaseAuthRepo", "getUserProfile error: ${e.message}")
             null
@@ -110,7 +124,9 @@ class FirebaseAuthRepository(
                 val id = doc.id
                 val name = doc.getString("name") ?: ""
                 val phone = doc.getString("phoneNumber") ?: ""
-                UserProfile(id = id, name = name, phone = phone, role = UserRole.MECHANIC)
+                @Suppress("UNCHECKED_CAST")
+                val skills = doc.get("skills") as? List<String> ?: emptyList()
+                UserProfile(id = id, name = name, phone = phone, role = UserRole.MECHANIC, skills = skills)
             }
         } catch (e: Exception) {
             Log.e("FirebaseAuthRepo", "getAllMechanics error: ${e.message}")
@@ -118,32 +134,55 @@ class FirebaseAuthRepository(
         }
     }
 
-    override suspend fun deleteAccount(): Result<Unit> {
+    override suspend fun deleteAccount(currentPassword: String): Result<Unit> {
+        val user = auth.currentUser ?: return Result.failure(Exception("No user signed in"))
+        val userId = user.uid
+        val email = user.email ?: return Result.failure(Exception("Missing email for re-authentication"))
+        
         return try {
-            val user = auth.currentUser ?: throw Exception("No user signed in")
-            val userId = user.uid
-            
             Log.d("FirebaseAuthRepo", "Starting account deletion for $userId")
 
-            // Use a timeout to prevent infinite loading
-            withTimeout(15000) {
-                // 1. Delete Firestore data first while user is still authenticated
+            val credential = EmailAuthProvider.getCredential(email, currentPassword)
+            Log.d("FirebaseAuthRepo", "Re-authenticating user before deletion...")
+            user.reauthenticate(credential).await()
+            Log.d("FirebaseAuthRepo", "Re-authentication successful.")
+
+            // 1. Delete from Firestore (with timeout to prevent hanging if API is disabled)
+            try {
                 Log.d("FirebaseAuthRepo", "Deleting Firestore user document...")
-                firestore.collection("users").document(userId).delete().await()
+                withTimeout(5000) {
+                    firestore.collection("users").document(userId).delete().await()
+                }
                 Log.d("FirebaseAuthRepo", "Firestore document deleted.")
-                
-                // 2. Delete Auth account
-                Log.d("FirebaseAuthRepo", "Deleting Auth account...")
-                user.delete().await()
-                Log.d("FirebaseAuthRepo", "Auth account deleted.")
+            } catch (e: Exception) {
+                Log.e("FirebaseAuthRepo", "Firestore deletion failed or timed out: ${e.message}")
+                // We continue to delete the Auth account even if Firestore fails
             }
+
+            // 2. Delete from Firebase Auth
+            Log.d("FirebaseAuthRepo", "Deleting Auth account...")
+            user.delete().await()
+            Log.d("FirebaseAuthRepo", "Auth account deleted.")
             
             Result.success(Unit)
+        } catch (e: FirebaseAuthInvalidCredentialsException) {
+            Log.e("FirebaseAuthRepo", "Deletion failed: Invalid password: ${e.message}")
+            Result.failure(Exception("The password you entered is incorrect."))
         } catch (e: FirebaseAuthRecentLoginRequiredException) {
-            Log.e("FirebaseAuthRepo", "Deletion failed: Re-authentication required")
-            Result.failure(Exception("For security, please log out and log back in before deleting your account."))
+            Log.e("FirebaseAuthRepo", "Deletion failed: Re-authentication required: ${e.message}")
+            Result.failure(Exception("Please re-enter your current password and try again."))
         } catch (e: Exception) {
             Log.e("FirebaseAuthRepo", "deleteAccount error: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun updateMechanicSkills(userId: String, skills: List<String>): Result<Unit> {
+        return try {
+            firestore.collection("users").document(userId).update("skills", skills).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FirebaseAuthRepo", "updateMechanicSkills error: ${e.message}")
             Result.failure(e)
         }
     }
