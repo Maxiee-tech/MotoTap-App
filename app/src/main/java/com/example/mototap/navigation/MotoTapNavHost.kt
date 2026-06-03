@@ -3,6 +3,7 @@ package com.example.mototap.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -50,6 +51,14 @@ fun MotoTapNavHost(
             }
         }
     )
+
+    androidx.compose.runtime.LaunchedEffect(driverViewModel.navigationEvent) {
+        driverViewModel.navigationEvent.collect { event ->
+            when (event) {
+                "job_tracking" -> navController.navigate(AppRoute.JobTracking.route)
+            }
+        }
+    }
 
     NavHost(
         navController = navController,
@@ -109,7 +118,7 @@ fun MotoTapNavHost(
                 viewModel = authViewModel,
                 onLoginSuccess = { role ->
                     when (role) {
-                        "customer" -> {
+                        "customer", "driver" -> {
                             navController.navigate(AppRoute.CustomerDashboard.route) {
                                 popUpTo(AppRoute.Login.route) { inclusive = true }
                             }
@@ -137,7 +146,7 @@ fun MotoTapNavHost(
                 viewModel = authViewModel,
                 onSignUpSuccess = { role ->
                     when (role) {
-                        "customer" -> {
+                        "customer", "driver" -> {
                             navController.navigate(AppRoute.CustomerDashboard.route) {
                                 popUpTo(AppRoute.SignUp.route) { inclusive = true }
                             }
@@ -162,7 +171,15 @@ fun MotoTapNavHost(
 
         // Customer Flow
         composable(AppRoute.CustomerDashboard.route) {
+            val userProfile by authViewModel.userProfile.collectAsState()
+            
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                authViewModel.fetchUserProfile()
+            }
+
             CustomerDashboardScreen(
+                viewModel = driverViewModel,
+                userProfile = userProfile,
                 onCategorySelected = { category ->
                     navController.navigate(AppRoute.SubServiceSelection.createRoute(category))
                 },
@@ -185,21 +202,71 @@ fun MotoTapNavHost(
             val category = backStackEntry.arguments?.getString("category") ?: ""
             SubServiceSelectionScreen(
                 categoryName = category,
+                viewModel = driverViewModel,
                 onSubServiceSelected = { subService ->
-                    driverViewModel.onIssueChanged(subService)
-                    navController.navigate(AppRoute.RequestService.route)
+                    navController.navigate(AppRoute.MechanicMap.createRoute(subService))
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = AppRoute.MechanicMap.route,
+            arguments = listOf(navArgument("service") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val service = backStackEntry.arguments?.getString("service") ?: ""
+            val userProfile by authViewModel.userProfile.collectAsState()
+            
+            MechanicMapScreen(
+                service = service,
+                viewModel = driverViewModel,
+                isAdmin = userProfile?.role == com.example.mototap.core.model.UserRole.ADMIN,
+                onMechanicDetailsClick = { mechanic ->
+                    navController.navigate(AppRoute.MechanicDetails.createRoute(mechanic.id))
                 },
                 onBack = { navController.popBackStack() }
             )
         }
         
+        composable(
+            route = AppRoute.MechanicDetails.route,
+            arguments = listOf(navArgument("mechanicId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val mechanicId = backStackEntry.arguments?.getString("mechanicId") ?: ""
+            val userProfile by authViewModel.userProfile.collectAsState()
+            val uiState by driverViewModel.uiState.collectAsState()
+            val mechanic = uiState.availableMechanics.firstOrNull { it.id == mechanicId }
+            
+            val reviews by authRepository.observeMechanicReviews(mechanicId).collectAsState(initial = emptyList())
+
+            if (mechanic != null) {
+                val context = LocalContext.current
+                val isAdmin = userProfile?.role == com.example.mototap.core.model.UserRole.ADMIN
+                
+                MechanicDetailsPage(
+                    mechanic = mechanic,
+                    reviews = reviews,
+                    isAdmin = isAdmin,
+                    onBack = { navController.popBackStack() },
+                    onChat = {
+                        driverViewModel.openChatWithMechanic(mechanic.id) { jobId ->
+                            navController.navigate(AppRoute.Chat.createRoute(jobId))
+                        }
+                    },
+                    onBookService = { serviceName ->
+                        driverViewModel.bookMechanic(context, mechanic, serviceName)
+                    }
+                )
+            }
+        }
+
         composable(AppRoute.RequestService.route) {
+            val userProfile by authViewModel.userProfile.collectAsState()
+            
             RequestServiceScreen(
                 viewModel = driverViewModel,
-                onBack = { navController.popBackStack() },
-                onChatWithMechanic = { mechanicId ->
-                    navController.navigate(AppRoute.Chat.createRoute(mechanicId))
-                }
+                isAdmin = userProfile?.role == com.example.mototap.core.model.UserRole.ADMIN,
+                onBack = { navController.popBackStack() }
             )
         }
         
@@ -213,22 +280,47 @@ fun MotoTapNavHost(
         }
         
         composable(AppRoute.JobTracking.route) {
+            val userProfile by authViewModel.userProfile.collectAsState()
             val driverUiState by driverViewModel.uiState.collectAsState()
+            val activeJob = driverUiState.jobs.firstOrNull { it.mechanicId != null && it.status != com.example.mototap.core.model.JobStatus.COMPLETED }
+            
             JobTrackingScreen(
                 onBack = { navController.popBackStack() },
                 onChat = {
-                    navController.navigate(AppRoute.Chat.createRoute("current_job"))
+                    activeJob?.let {
+                        navController.navigate(AppRoute.Chat.createRoute(it.id))
+                    } ?: navController.navigate(AppRoute.Chat.createRoute("current_job"))
                 },
-                mechanicPhoneNumber = driverUiState.mechanicPhoneNumber
+                mechanicPhoneNumber = driverUiState.mechanicPhoneNumber,
+                status = activeJob?.status ?: com.example.mototap.core.model.JobStatus.ASSIGNED,
+                isAdmin = userProfile?.role == com.example.mototap.core.model.UserRole.ADMIN,
+                onJobCompleted = {
+                    activeJob?.mechanicId?.let { mechanicId ->
+                        navController.navigate(AppRoute.RatingReview.createRoute(mechanicId))
+                    } ?: navController.popBackStack()
+                }
             )
         }
 
-        // Reuse the same History/Requests screen for both roles
+        // History/Requests screen based on role
         composable(AppRoute.RequestHistory.route) {
-            RequestHistoryScreen(
-                viewModel = driverViewModel,
-                onBack = { navController.popBackStack() }
-            )
+            val userProfile by authViewModel.userProfile.collectAsState()
+            
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                authViewModel.fetchUserProfile()
+            }
+            
+            if (userProfile?.role?.name?.lowercase() == "mechanic") {
+                MechanicHistoryScreen(
+                    viewModel = mechanicViewModel,
+                    onBack = { navController.popBackStack() }
+                )
+            } else {
+                RequestHistoryScreen(
+                    viewModel = driverViewModel,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
 
         composable(AppRoute.ChatList.route) {
@@ -244,6 +336,7 @@ fun MotoTapNavHost(
         composable(AppRoute.Profile.route) {
             ProfileScreen(
                 viewModel = authViewModel,
+                driverViewModel = driverViewModel,
                 onBack = { navController.popBackStack() },
                 onLogout = {
                     navController.navigate(AppRoute.Login.route) {
@@ -254,6 +347,12 @@ fun MotoTapNavHost(
                     navController.navigate(AppRoute.Login.route) {
                         popUpTo(navController.graph.id) { inclusive = true }
                     }
+                },
+                onNavigateToRequests = {
+                    navController.navigate(AppRoute.RequestHistory.route)
+                },
+                onBookNow = { category ->
+                    navController.navigate(AppRoute.SubServiceSelection.createRoute(category))
                 }
             )
         }
@@ -289,6 +388,9 @@ fun MotoTapNavHost(
                     currentJob?.let {
                         navController.navigate(AppRoute.Chat.createRoute(it.id))
                     } ?: navController.navigate(AppRoute.Chat.createRoute("current_job"))
+                },
+                onComplete = { jobId ->
+                    mechanicViewModel.updateStatus(jobId, com.example.mototap.core.model.JobStatus.COMPLETED)
                 }
             )
         }
@@ -304,7 +406,7 @@ fun MotoTapNavHost(
                 factory = object : androidx.lifecycle.ViewModelProvider.Factory {
                     @Suppress("UNCHECKED_CAST")
                     override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                        return ChatViewModel(chatRepository, jobId, currentUserId) as T
+                        return ChatViewModel(authRepository, chatRepository, jobId, currentUserId) as T
                     }
                 }
             )
@@ -316,10 +418,24 @@ fun MotoTapNavHost(
             )
         }
 
-        composable(AppRoute.RatingReview.route) {
+        composable(
+            route = AppRoute.RatingReview.route,
+            arguments = listOf(navArgument("mechanicId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val mechanicId = backStackEntry.arguments?.getString("mechanicId") ?: ""
+            val ratingViewModel: RatingReviewViewModel = viewModel(
+                factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
+                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                        return RatingReviewViewModel(authRepository, mechanicId) as T
+                    }
+                }
+            )
+            
             RatingReviewScreen(
+                viewModel = ratingViewModel,
                 onBack = { navController.popBackStack() },
-                onAddReview = {
+                onSuccess = {
                     navController.navigate(AppRoute.CustomerDashboard.route) {
                         popUpTo(AppRoute.CustomerDashboard.route) { inclusive = true }
                     }

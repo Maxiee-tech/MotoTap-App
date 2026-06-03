@@ -1,5 +1,9 @@
 package com.example.mototap.features.mechanic
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,21 +18,27 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.mototap.R
 import com.example.mototap.core.model.JobStatus
-import com.example.mototap.features.driver.BottomNavigationBar
+import com.example.mototap.ui.BottomNavigationBar
 import com.example.mototap.ui.theme.MotoRed
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.auth.FirebaseAuth
+import com.google.maps.android.compose.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,9 +52,35 @@ fun ProviderDashboardScreen(
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
 
     var showServiceSelection by remember { mutableStateOf(false) }
+    var showLocationSelection by remember { mutableStateOf(false) }
+
+    // Force selection logic
+    LaunchedEffect(uiState.selectedSkills, uiState.latitude, uiState.longitude) {
+        if (uiState.selectedSkills.isEmpty()) {
+            showServiceSelection = true
+            showLocationSelection = false
+        } else if (uiState.latitude == null || uiState.longitude == null) {
+            showLocationSelection = true
+            showServiceSelection = false
+        }
+    }
+
+    var locationPermissionGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        locationPermissionGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -61,29 +97,43 @@ fun ProviderDashboardScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = if (showServiceSelection) "CHOOSE SERVICES" else stringResource(R.string.provider_dashboard),
+                        text = when {
+                            showServiceSelection -> "CHOOSE SERVICES"
+                            showLocationSelection -> "SET GARAGE LOCATION"
+                            else -> stringResource(R.string.provider_dashboard)
+                        },
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { if (showServiceSelection) showServiceSelection = false else onBack() }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White
-                        )
+                    val canGoBack = (!showServiceSelection || uiState.selectedSkills.isNotEmpty()) &&
+                                    (!showLocationSelection || (uiState.latitude != null && uiState.longitude != null))
+                    
+                    if (canGoBack) {
+                        IconButton(onClick = { 
+                            when {
+                                showLocationSelection -> showLocationSelection = false
+                                showServiceSelection -> showServiceSelection = false
+                                else -> onBack()
+                            }
+                        }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color.White
+                            )
+                        }
                     }
                 },
                 actions = {
-                    if (!showServiceSelection) {
+                    if (!showServiceSelection && !showLocationSelection) {
+                        IconButton(onClick = { showLocationSelection = true }) {
+                            Icon(Icons.Default.LocationOn, contentDescription = "Update Location", tint = Color.White)
+                        }
                         IconButton(onClick = { showServiceSelection = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Build,
-                                contentDescription = "Manage Services",
-                                tint = Color.White
-                            )
+                            Icon(Icons.Default.Build, contentDescription = "Manage Services", tint = Color.White)
                         }
                     }
                 },
@@ -93,155 +143,306 @@ fun ProviderDashboardScreen(
             )
         },
         bottomBar = {
-            BottomNavigationBar(
-                currentRoute = "home",
-                onNavigate = { route ->
-                    when(route) {
-                        "requests" -> onNavigateToRequests()
-                        "messages" -> onNavigateToMessages()
-                        "profile" -> onNavigateToProfile()
+            if (!showServiceSelection && !showLocationSelection) {
+                BottomNavigationBar(
+                    currentRoute = "home",
+                    onNavigate = { route: String ->
+                        when(route) {
+                            "requests" -> onNavigateToRequests()
+                            "messages" -> onNavigateToMessages()
+                            "profile" -> onNavigateToProfile()
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         containerColor = Color.Black
     ) { paddingValues ->
-        if (showServiceSelection) {
-            MechanicServiceSelection(
-                selectedSkills = uiState.selectedSkills,
-                onSkillToggled = { viewModel.toggleSkill(it) },
-                modifier = Modifier.padding(paddingValues)
-            )
-        } else {
-            Column(
-                modifier = modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(16.dp)
-            ) {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MotoRed.copy(alpha = 0.1f)),
-                            onClick = { showServiceSelection = true }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Build, contentDescription = null, tint = MotoRed)
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column {
-                                    Text(
-                                        text = "SERVICES YOU OFFER",
-                                        color = MotoRed,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    )
-                                    Text(
-                                        text = "${uiState.selectedSkills.size} services selected",
-                                        color = Color.White,
-                                        fontSize = 14.sp
-                                    )
+        when {
+            showServiceSelection -> {
+                Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+                    MechanicServiceSelection(
+                        selectedSkills = uiState.selectedSkills,
+                        onSkillToggled = { viewModel.toggleSkill(it) },
+                        modifier = Modifier.padding(bottom = 80.dp)
+                    )
+                    
+                    if (uiState.selectedSkills.isNotEmpty()) {
+                        Button(
+                            onClick = { 
+                                showServiceSelection = false
+                                if (uiState.latitude == null || uiState.longitude == null) {
+                                    showLocationSelection = true
                                 }
-                                Spacer(modifier = Modifier.weight(1f))
-                                Text("EDIT", color = MotoRed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
-                        }
-                    }
-
-                    item {
-                        Text(
-                            text = stringResource(R.string.new_requests),
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                    }
-
-                    if (uiState.openJobs.isEmpty()) {
-                        item {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().height(100.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (uiState.selectedSkills.isEmpty()) 
-                                        "Select services to see matching requests" 
-                                        else "No matching requests nearby",
-                                    color = Color.Gray,
-                                    fontSize = 14.sp
-                                )
-                            }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(16.dp)
+                                .fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("SAVE & CONTINUE", fontWeight = FontWeight.Bold)
                         }
                     } else {
-                        items(uiState.openJobs, key = { it.id }) { job ->
-                            RequestItem(
-                                label = "${job.issueType} - ${job.locationLabel}",
-                                actionText = "ACCEPT",
-                                onActionClick = { viewModel.acceptJob(job.id, currentUserId) }
-                            )
-                        }
-                    }
-
-                    item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.ongoing_jobs),
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                    }
-
-                    if (uiState.ongoingJobs.isEmpty()) {
-                        item {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().height(60.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "No ongoing jobs",
-                                    color = Color.Gray,
-                                    fontSize = 14.sp
-                                )
-                            }
-                        }
-                    } else {
-                        items(uiState.ongoingJobs, key = { it.id }) { job ->
-                            RequestItem(
-                                label = "${job.issueType} (${job.status})",
-                                actionText = "VIEW",
-                                onActionClick = { onSubmitQuote() }
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(16.dp)
+                                .fillMaxWidth(),
+                            color = Color.DarkGray,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                "Please select at least one service to continue",
+                                color = Color.White,
+                                modifier = Modifier.padding(16.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
                         }
                     }
                 }
+            }
+            showLocationSelection -> {
+                Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+                    val nairobi = LatLng(-1.286389, 36.817223)
+                    val cameraPositionState = rememberCameraPositionState {
+                        position = CameraPosition.fromLatLngZoom(
+                            if (uiState.latitude != null && uiState.longitude != null) 
+                                LatLng(uiState.latitude!!, uiState.longitude!!) 
+                            else nairobi,
+                            15f
+                        )
+                    }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Status Actions for the first ongoing job
-                val firstJob = uiState.ongoingJobs.firstOrNull()
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DashboardButton(
-                        text = stringResource(R.string.on_the_way),
-                        onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.MATCHING) } },
-                        enabled = firstJob != null && firstJob.status == JobStatus.ASSIGNED
-                    )
-                    DashboardButton(
-                        text = stringResource(R.string.in_progress),
-                        onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.IN_PROGRESS) } },
-                        enabled = firstJob != null && (firstJob.status == JobStatus.ASSIGNED || firstJob.status == JobStatus.MATCHING)
-                    )
-                    DashboardButton(
-                        text = stringResource(R.string.complete),
-                        onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.COMPLETED) } },
-                        enabled = firstJob != null && firstJob.status == JobStatus.IN_PROGRESS
-                    )
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            GoogleMap(
+                                modifier = Modifier.fillMaxSize(),
+                                cameraPositionState = cameraPositionState,
+                                properties = MapProperties(
+                                    isMyLocationEnabled = locationPermissionGranted,
+                                    mapType = MapType.NORMAL,
+                                    isTrafficEnabled = true
+                                ),
+                                uiSettings = MapUiSettings(
+                                    myLocationButtonEnabled = locationPermissionGranted,
+                                    zoomControlsEnabled = true
+                                )
+                            ) {
+                                uiState.latitude?.let { lat ->
+                                    uiState.longitude?.let { lon ->
+                                        Marker(state = MarkerState(position = LatLng(lat, lon)))
+                                    }
+                                }
+                            }
+                            
+                            if (!locationPermissionGranted) {
+                                Button(
+                                    onClick = { 
+                                        permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                                    },
+                                    modifier = Modifier.align(Alignment.TopCenter).padding(16.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.6f))
+                                ) {
+                                    Text("Enable My Location")
+                                }
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color.Black,
+                            tonalElevation = 8.dp
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    "Tap the map or move the camera to your garage location and click 'Confirm'",
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.padding(bottom = 16.dp)
+                                )
+                                Button(
+                                    onClick = {
+                                        viewModel.updateLocation(
+                                            cameraPositionState.position.target.latitude,
+                                            cameraPositionState.position.target.longitude
+                                        )
+                                        showLocationSelection = false
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("CONFIRM GARAGE LOCATION", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            else -> {
+                Column(
+                    modifier = modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(16.dp)
+                ) {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MotoRed.copy(alpha = 0.1f)),
+                                onClick = { showServiceSelection = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Build, contentDescription = null, tint = MotoRed)
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column {
+                                        Text(
+                                            text = "SERVICES YOU OFFER",
+                                            color = MotoRed,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                        Text(
+                                            text = "${uiState.selectedSkills.size} services selected",
+                                            color = Color.White,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.weight(1f))
+                                    Text("EDIT", color = MotoRed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = Color.DarkGray.copy(alpha = 0.3f)),
+                                onClick = { showLocationSelection = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.LocationOn, contentDescription = null, tint = MotoRed)
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column {
+                                        Text(
+                                            text = "GARAGE LOCATION",
+                                            color = MotoRed,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                        Text(
+                                            text = if (uiState.latitude != null) "Location Pinned" else "Not set",
+                                            color = Color.White,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.weight(1f))
+                                    Text("UPDATE", color = MotoRed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+
+                        item {
+                            Text(
+                                text = stringResource(R.string.new_requests),
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+
+                        if (uiState.openJobs.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().height(100.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (uiState.selectedSkills.isEmpty()) 
+                                            "Select services to see matching requests" 
+                                            else "No matching requests nearby",
+                                        color = Color.Gray,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                        } else {
+                            items(uiState.openJobs, key = { it.id }) { job ->
+                                RequestItem(
+                                    label = "${job.issueType} - ${job.locationLabel}",
+                                    actionText = "ACCEPT",
+                                    onActionClick = { viewModel.acceptJob(job.id, currentUserId) }
+                                )
+                            }
+                        }
+
+                        item {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(R.string.ongoing_jobs),
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+
+                        if (uiState.ongoingJobs.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "No ongoing jobs",
+                                        color = Color.Gray,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                        } else {
+                            items(uiState.ongoingJobs, key = { it.id }) { job ->
+                                RequestItem(
+                                    label = "${job.issueType} (${job.status})",
+                                    actionText = "VIEW",
+                                    onActionClick = { onSubmitQuote() }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Status Actions for the first ongoing job
+                    val firstJob = uiState.ongoingJobs.firstOrNull()
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DashboardButton(
+                            text = stringResource(R.string.on_the_way),
+                            onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.MATCHING) } },
+                            enabled = firstJob != null && firstJob.status == JobStatus.ASSIGNED
+                        )
+                        DashboardButton(
+                            text = stringResource(R.string.in_progress),
+                            onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.IN_PROGRESS) } },
+                            enabled = firstJob != null && (firstJob.status == JobStatus.ASSIGNED || firstJob.status == JobStatus.MATCHING)
+                        )
+                        DashboardButton(
+                            text = stringResource(R.string.complete),
+                            onClick = { firstJob?.let { viewModel.updateStatus(it.id, JobStatus.COMPLETED) } },
+                            enabled = firstJob != null && firstJob.status == JobStatus.IN_PROGRESS
+                        )
+                    }
                 }
             }
         }

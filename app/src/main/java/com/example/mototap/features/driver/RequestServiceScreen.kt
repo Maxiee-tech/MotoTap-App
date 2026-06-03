@@ -31,19 +31,20 @@ import com.example.mototap.ui.theme.MotoRed
 @Composable
 fun RequestServiceScreen(
     viewModel: DriverHomeViewModel,
+    isAdmin: Boolean = false,
     onBack: () -> Unit,
-    onChatWithMechanic: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val selectedMechanic = uiState.selectedMechanic
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = "AVAILABLE MECHANICS",
+                        text = "MECHANIC DETAILS",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp
@@ -65,37 +66,32 @@ fun RequestServiceScreen(
         },
         containerColor = Color.Black
     ) { paddingValues ->
-        if (uiState.availableMechanics.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
-                Text("No mechanics available at the moment", color = Color.Gray)
-            }
-        } else {
-            LazyColumn(
-                modifier = modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(uiState.availableMechanics) { mechanic ->
-                    MechanicContactCard(
-                        mechanic = mechanic,
-                        onMessageClick = { 
-                            // Fixed: Using SMS Intent to message the mechanic directly, 
-                            // consistent with the "Call Direct" functionality.
-                            val intent = Intent(Intent.ACTION_SENDTO).apply {
-                                data = Uri.parse("smsto:${mechanic.phone}")
-                            }
-                            context.startActivity(intent)
-                        },
-                        onCallClick = {
-                            val intent = Intent(Intent.ACTION_DIAL).apply {
-                                data = Uri.parse("tel:${mechanic.phone}")
-                            }
-                            context.startActivity(intent)
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            contentAlignment = if (selectedMechanic == null) Alignment.Center else Alignment.TopCenter
+        ) {
+            if (selectedMechanic == null) {
+                Text("No mechanic selected", color = Color.Gray)
+            } else {
+                MechanicContactCard(
+                    mechanic = selectedMechanic,
+                    isAdmin = isAdmin,
+                    onMessageClick = { 
+                        val intent = Intent(Intent.ACTION_SENDTO).apply {
+                            data = Uri.parse("smsto:${selectedMechanic.phone}")
                         }
-                    )
-                }
+                        context.startActivity(intent)
+                    },
+                    onCallClick = {
+                        val intent = Intent(Intent.ACTION_DIAL).apply {
+                            data = Uri.parse("tel:${selectedMechanic.phone}")
+                        }
+                        context.startActivity(intent)
+                    }
+                )
             }
         }
     }
@@ -104,6 +100,7 @@ fun RequestServiceScreen(
 @Composable
 fun MechanicContactCard(
     mechanic: UserProfile,
+    isAdmin: Boolean = false,
     onMessageClick: () -> Unit,
     onCallClick: () -> Unit
 ) {
@@ -147,32 +144,34 @@ fun MechanicContactCard(
                 }
             }
             
-            Spacer(modifier = Modifier.height(20.dp))
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Button(
-                    onClick = onMessageClick,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(Icons.Default.Email, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Message", color = Color.White)
-                }
+            if (isAdmin) {
+                Spacer(modifier = Modifier.height(20.dp))
                 
-                Button(
-                    onClick = onCallClick,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
-                    shape = RoundedCornerShape(8.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Call Direct", color = Color.White)
+                    Button(
+                        onClick = onMessageClick,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Email, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Message", color = Color.White)
+                    }
+                    
+                    Button(
+                        onClick = onCallClick,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Call Direct", color = Color.White)
+                    }
                 }
             }
         }

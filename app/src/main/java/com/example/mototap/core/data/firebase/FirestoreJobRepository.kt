@@ -24,16 +24,18 @@ class FirestoreJobRepository(
         description: String,
         locationLabel: String,
         suggestedPrice: Long,
+        mechanicId: String?,
+        jobId: String?,
     ): Result<String> = runCatching {
-        val doc = jobs.document()
+        val doc = if (jobId != null) jobs.document(jobId) else jobs.document()
         doc.set(
             mapOf(
                 "driverId" to driverId,
-                "mechanicId" to null,
+                "mechanicId" to mechanicId,
                 "issueType" to issueType,
                 "description" to description,
                 "locationLabel" to locationLabel,
-                "status" to JobStatus.REQUESTED.name,
+                "status" to (if (mechanicId != null) JobStatus.ASSIGNED.name else JobStatus.REQUESTED.name),
                 "price" to suggestedPrice,
                 "createdAtMillis" to System.currentTimeMillis(),
             )
@@ -42,25 +44,63 @@ class FirestoreJobRepository(
     }
 
     override fun observeDriverJobs(driverId: String): Flow<List<JobRequest>> = callbackFlow {
+        if (driverId.isBlank()) {
+            trySend(emptyList())
+            awaitClose { }
+            return@callbackFlow
+        }
         val subscription = jobs
             .whereEqualTo("driverId", driverId)
-            .orderBy("createdAtMillis", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.e("FirestoreJobRepo", "Error observing driver jobs: ${error.message}")
-                    trySend(emptyList()) // Send empty list instead of crashing
+                    trySend(emptyList()) 
                     return@addSnapshotListener
                 }
 
                 val list = snapshot
                     ?.documents
                     ?.mapNotNull { it.toJobRequestOrNull() }
+                    ?.sortedByDescending { it.createdAtMillis }
                     .orEmpty()
 
                 trySend(list)
             }
 
-        awaitClose { subscription.remove() }
+        awaitClose { 
+            Log.d("FirestoreJobRepo", "Removing driver jobs observer")
+            subscription.remove() 
+        }
+    }
+
+    override fun observeMechanicJobs(mechanicId: String): Flow<List<JobRequest>> = callbackFlow {
+        if (mechanicId.isBlank()) {
+            trySend(emptyList())
+            awaitClose { }
+            return@callbackFlow
+        }
+        val subscription = jobs
+            .whereEqualTo("mechanicId", mechanicId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("FirestoreJobRepo", "Error observing mechanic jobs: ${error.message}")
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+
+                val list = snapshot
+                    ?.documents
+                    ?.mapNotNull { it.toJobRequestOrNull() }
+                    ?.sortedByDescending { it.createdAtMillis }
+                    .orEmpty()
+
+                trySend(list)
+            }
+
+        awaitClose {
+            Log.d("FirestoreJobRepo", "Removing mechanic jobs observer")
+            subscription.remove()
+        }
     }
 
     override fun observeOpenJobs(): Flow<List<JobRequest>> = callbackFlow {
@@ -73,23 +113,28 @@ class FirestoreJobRepository(
                     JobStatus.ASSIGNED.name,
                 )
             )
-            .orderBy("createdAtMillis", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
+                    // Critical: Just log the error and send empty list. 
+                    // Do NOT use close(error) or throw any exception.
                     Log.e("FirestoreJobRepo", "Error observing open jobs: ${error.message}")
-                    trySend(emptyList()) // Send empty list instead of crashing
+                    trySend(emptyList()) 
                     return@addSnapshotListener
                 }
 
                 val list = snapshot
                     ?.documents
                     ?.mapNotNull { it.toJobRequestOrNull() }
+                    ?.sortedByDescending { it.createdAtMillis }
                     .orEmpty()
 
                 trySend(list)
             }
 
-        awaitClose { subscription.remove() }
+        awaitClose { 
+            Log.d("FirestoreJobRepo", "Removing open jobs observer")
+            subscription.remove() 
+        }
     }
 
     override suspend fun updateJobStatus(jobId: String, status: JobStatus): Result<Unit> = runCatching {

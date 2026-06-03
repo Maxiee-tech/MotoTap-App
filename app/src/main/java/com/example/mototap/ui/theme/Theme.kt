@@ -36,7 +36,7 @@ private val LightColorScheme = lightColorScheme(
     secondary = MotoGray,
     onSecondary = MotoWhite,
     tertiary = MotoRed,
-    background = MotoBlack, // Wireframe shows dark theme even for light? Let's stick to dark theme style for both for now to match wireframe exactly.
+    background = MotoBlack,
     surface = MotoBlack,
     onBackground = MotoWhite,
     onSurface = MotoWhite
@@ -44,9 +44,8 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun MotoTapTheme(
-    darkTheme: Boolean = true, // Force dark theme to match wireframe
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = false, // Disable dynamic color to maintain brand identity
+    darkTheme: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -54,16 +53,19 @@ fun MotoTapTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
+    
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.background.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            val activity = view.context as? Activity
+            activity?.window?.let { window ->
+                // Since enableEdgeToEdge() is called in MainActivity, we don't need to set statusBarColor directly.
+                // We only need to control the appearance of the status bar icons (Light vs Dark).
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            }
         }
     }
 

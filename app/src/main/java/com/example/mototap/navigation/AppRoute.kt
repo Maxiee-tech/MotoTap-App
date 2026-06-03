@@ -1,5 +1,7 @@
 package com.example.mototap.navigation
 
+import android.net.Uri
+
 sealed class AppRoute(
     val route: String,
 ) {
@@ -11,22 +13,30 @@ sealed class AppRoute(
     // Customer Flow
     data object CustomerDashboard : AppRoute("customer_dashboard")
     data object SubServiceSelection : AppRoute("sub_service_selection/{category}") {
-        fun createRoute(category: String) = "sub_service_selection/$category"
+        fun createRoute(category: String) = "sub_service_selection/${Uri.encode(category)}"
     }
     data object RequestService : AppRoute("request_service")
     data object QuotePayment : AppRoute("quote_payment")
     data object JobTracking : AppRoute("job_tracking")
     data object RequestHistory : AppRoute("request_history")
     data object Profile : AppRoute("profile")
-    
+    data object MechanicMap : AppRoute("mechanic_map/{service}") {
+        fun createRoute(service: String) = "mechanic_map/${Uri.encode(service)}"
+    }
+    data object MechanicDetails : AppRoute("mechanic_details/{mechanicId}") {
+        fun createRoute(mechanicId: String) = "mechanic_details/${Uri.encode(mechanicId)}"
+    }
+
     // Provider Flow
     data object ProviderDashboard : AppRoute("provider_dashboard")
     data object ProviderJobTracking : AppRoute("provider_job_tracking")
-    data object RatingReview : AppRoute("rating_review")
+    data object RatingReview : AppRoute("rating_review/{mechanicId}") {
+        fun createRoute(mechanicId: String) = "rating_review/${Uri.encode(mechanicId)}"
+    }
 
     // Shared Flow
     data object Chat : AppRoute("chat/{jobId}") {
-        fun createRoute(jobId: String) = "chat/$jobId"
+        fun createRoute(jobId: String) = "chat/${Uri.encode(jobId)}"
     }
     data object ChatList : AppRoute("chat_list")
 

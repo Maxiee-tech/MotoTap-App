@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mototap.R
+import com.example.mototap.core.model.JobStatus
 import com.example.mototap.ui.theme.MotoRed
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -30,11 +31,20 @@ import com.example.mototap.ui.theme.MotoRed
 fun JobTrackingScreen(
     onBack: () -> Unit,
     onChat: () -> Unit,
+    onJobCompleted: () -> Unit = {},
+    status: JobStatus = JobStatus.ASSIGNED,
+    isAdmin: Boolean = false,
     mechanicPhoneNumber: String? = null,
     modifier: Modifier = Modifier,
 ) {
     var showContactOptions by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    LaunchedEffect(status) {
+        if (status == JobStatus.COMPLETED) {
+            onJobCompleted()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -79,11 +89,23 @@ fun JobTrackingScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            TrackingItem(stringResource(R.string.on_the_way), Icons.Default.LocationOn, true)
+            TrackingItem(
+                stringResource(R.string.on_the_way), 
+                Icons.Default.LocationOn, 
+                status == JobStatus.MATCHING || status == JobStatus.IN_PROGRESS || status == JobStatus.COMPLETED
+            )
             Spacer(modifier = Modifier.height(16.dp))
-            TrackingItem(stringResource(R.string.in_progress), Icons.Default.CheckCircle, true)
+            TrackingItem(
+                stringResource(R.string.in_progress), 
+                Icons.Default.CheckCircle, 
+                status == JobStatus.IN_PROGRESS || status == JobStatus.COMPLETED
+            )
             Spacer(modifier = Modifier.height(16.dp))
-            TrackingItem(stringResource(R.string.completed), Icons.Default.CheckCircle, false)
+            TrackingItem(
+                stringResource(R.string.completed), 
+                Icons.Default.CheckCircle, 
+                status == JobStatus.COMPLETED
+            )
 
             Spacer(modifier = Modifier.weight(1f))
 
@@ -111,7 +133,7 @@ fun JobTrackingScreen(
             AlertDialog(
                 onDismissRequest = { showContactOptions = false },
                 title = { Text(stringResource(R.string.contact_options)) },
-                text = { Text("How would you like to reach the mechanic?") },
+                text = { Text("Use the in-app chat to reach the mechanic.") },
                 confirmButton = {
                     TextButton(onClick = {
                         showContactOptions = false
@@ -125,19 +147,25 @@ fun JobTrackingScreen(
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = {
-                        showContactOptions = false
-                        mechanicPhoneNumber?.let {
-                            val intent = Intent(Intent.ACTION_DIAL).apply {
-                                data = Uri.parse("tel:$it")
+                    if (isAdmin) {
+                        TextButton(onClick = {
+                            showContactOptions = false
+                            mechanicPhoneNumber?.let {
+                                val intent = Intent(Intent.ACTION_DIAL).apply {
+                                    data = Uri.parse("tel:$it")
+                                }
+                                context.startActivity(intent)
                             }
-                            context.startActivity(intent)
+                        }) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Call, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.call_direct))
+                            }
                         }
-                    }) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Call, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(stringResource(R.string.call_direct))
+                    } else {
+                        TextButton(onClick = { showContactOptions = false }) {
+                            Text("CLOSE")
                         }
                     }
                 }

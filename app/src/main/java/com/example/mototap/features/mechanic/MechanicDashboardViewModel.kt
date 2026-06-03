@@ -11,15 +11,19 @@ import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 data class MechanicUiState(
     val openJobs: List<JobRequest> = emptyList(),
     val ongoingJobs: List<JobRequest> = emptyList(),
+    val completedJobs: List<JobRequest> = emptyList(),
     val selectedSkills: List<String> = emptyList(),
     val infoMessage: String? = null,
     val isLoading: Boolean = false,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
 )
 
 class MechanicDashboardViewModel(
@@ -33,39 +37,53 @@ class MechanicDashboardViewModel(
     private val _selectedSkills = MutableStateFlow<List<String>>(emptyList())
 
     init {
-        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
-        
-        if (currentUserId != null) {
-            viewModelScope.launch {
-                val profile = authRepository.getUserProfile(currentUserId)
-                val skills = profile?.skills ?: emptyList()
-                _selectedSkills.value = skills
-                _uiState.value = _uiState.value.copy(selectedSkills = skills)
-            }
-        }
-
         viewModelScope.launch {
-            combine(
-                jobRepository.observeOpenJobs(),
-                _selectedSkills
-            ) { jobs, skills ->
-                val newRequests = jobs.filter { job -> 
-                    job.status == JobStatus.REQUESTED && 
-                    (skills.isEmpty() || skills.contains(job.issueType))
+            authRepository.currentUserId.collectLatest { userId ->
+                if (userId != null) {
+                    val profile = authRepository.getUserProfile(userId)
+                    // Combine both fields to ensure all selected services are captured
+                    val combinedSkills = ((profile?.skills ?: emptyList()) + (profile?.availableServices ?: emptyList())).distinct()
+                    _selectedSkills.value = combinedSkills
+                    _uiState.value = _uiState.value.copy(
+                        selectedSkills = combinedSkills,
+                        latitude = profile?.latitude,
+                        longitude = profile?.longitude,
+                    )
+
+                    // Combine observations that depend on auth state
+                    combine(
+                        jobRepository.observeOpenJobs(),
+                        jobRepository.observeMechanicJobs(userId),
+                        _selectedSkills
+                    ) { openJobs, myJobs, skills ->
+                        // 1. New public requests that match skills
+                        val newRequests = openJobs.filter { job -> 
+                            job.status == JobStatus.REQUESTED && 
+                            (skills.isEmpty() || skills.contains(job.issueType))
+                        }
+                        
+                        // 2. Jobs assigned specifically to this mechanic
+                        val ongoing = myJobs.filter { 
+                            it.status == JobStatus.ASSIGNED || it.status == JobStatus.IN_PROGRESS
+                        }
+
+                        val completed = myJobs.filter {
+                            it.status == JobStatus.COMPLETED || it.status == JobStatus.PAID || it.status == JobStatus.CLOSED
+                        }
+                        
+                        Triple(newRequests, ongoing, completed)
+                    }.collect { (newRequests, ongoing, completed) ->
+                        _uiState.value = _uiState.value.copy(
+                            openJobs = newRequests,
+                            ongoingJobs = ongoing,
+                            completedJobs = completed,
+                            selectedSkills = _selectedSkills.value
+                        )
+                    }
+                } else {
+                    _uiState.value = MechanicUiState()
+                    _selectedSkills.value = emptyList()
                 }
-                
-                val ongoing = jobs.filter { 
-                    it.mechanicId == currentUserId && 
-                    (it.status == JobStatus.ASSIGNED || it.status == JobStatus.IN_PROGRESS) 
-                }
-                
-                Pair(newRequests, ongoing)
-            }.collect { (newRequests, ongoing) ->
-                _uiState.value = _uiState.value.copy(
-                    openJobs = newRequests,
-                    ongoingJobs = ongoing,
-                    selectedSkills = _selectedSkills.value
-                )
             }
         }
     }
@@ -104,10 +122,36 @@ class MechanicDashboardViewModel(
     fun updateStatus(jobId: String, status: JobStatus) {
         viewModelScope.launch {
             val result = jobRepository.updateJobStatus(jobId, status)
-            if (result.isFailure) {
-                _uiState.value = _uiState.value.copy(infoMessage = "Failed to update status")
-            } else {
+            if (result.isSuccess) {
                 _uiState.value = _uiState.value.copy(infoMessage = "Status updated to ${status.name}")
+                
+                // Award points if job completed
+                if (status == JobStatus.COMPLETED) {
+                    val job = _uiState.value.ongoingJobs.find { it.id == jobId }
+                    job?.driverId?.let { driverId ->
+                        authRepository.awardLoyaltyPoints(driverId, 10) // Award 10 points
+                    }
+                }
+            } else {
+                _uiState.value = _uiState.value.copy(infoMessage = "Failed to update status")
+            }
+        }
+    }
+
+    fun updateLocation(lat: Double, lon: Double) {
+        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        _uiState.value = _uiState.value.copy(latitude = lat, longitude = lon)
+        
+        viewModelScope.launch {
+            val profile = authRepository.getUserProfile(currentUserId)
+            if (profile != null) {
+                val updatedProfile = profile.copy(latitude = lat, longitude = lon)
+                val result = authRepository.updateUserProfile(updatedProfile)
+                if (result.isFailure) {
+                    _uiState.value = _uiState.value.copy(infoMessage = "Failed to update location")
+                } else {
+                    _uiState.value = _uiState.value.copy(infoMessage = "Location updated successfully")
+                }
             }
         }
     }

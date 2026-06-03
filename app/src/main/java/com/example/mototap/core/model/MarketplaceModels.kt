@@ -6,7 +6,15 @@ enum class UserRole {
     ADMIN,
 }
 
+enum class VerificationStatus {
+    PENDING,
+    VERIFIED,
+    REJECTED,
+    SUSPENDED,
+}
+
 enum class JobStatus {
+    INQUIRY,
     REQUESTED,
     MATCHING,
     ASSIGNED,
@@ -16,12 +24,51 @@ enum class JobStatus {
     CLOSED,
 }
 
+data class VehicleProfile(
+    val id: String = "",
+    val make: String = "",
+    val model: String = "",
+    val year: String = "",
+    val licensePlate: String = "",
+    val mileage: String = "",
+    val lastServiceDate: Long? = null,
+    val photoUrl: String = "",
+)
+
 data class UserProfile(
-    val id: String,
-    val name: String,
-    val phone: String,
-    val role: UserRole,
+    val id: String = "",
+    val name: String = "",
+    val email: String = "",
+    val phone: String = "",
+    val role: UserRole = UserRole.DRIVER,
+    val profilePhotoUrl: String = "",
+    val idNumber: String = "",
+    val idPhotoUrl: String = "",
+    val status: VerificationStatus = VerificationStatus.PENDING,
+    
+    // Driver specific fields
+    val vehicleType: String = "",
+    val vehicleModel: String = "",
+    val numberPlate: String = "",
+    val vehiclePhotoUrl: String = "",
+    val vehicles: List<VehicleProfile> = emptyList(),
+    val loyaltyPoints: Int = 0,
+    
+    // Mechanic specific fields
+    val certificateNumber: String = "",
+    val certificatePhotoUrl: String = "",
+    val institutionName: String = "",
+    val experienceYears: String = "",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val address: String = "",
+    val garagePhotos: List<String> = emptyList(),
+    
     val skills: List<String> = emptyList(),
+    val availableServices: List<String> = emptyList(),
+    val rating: Double = 0.0,
+    val reviewCount: Int = 0,
+    val brandSpecializations: List<String> = emptyList(),
 )
 
 data class MechanicProfile(
@@ -51,6 +98,16 @@ data class ChatMessage(
     val text: String,
     val timestampMillis: Long,
     val read: Boolean,
+)
+
+data class Review(
+    val id: String = "",
+    val mechanicId: String = "",
+    val driverId: String = "",
+    val driverName: String = "",
+    val rating: Double = 0.0,
+    val comment: String = "",
+    val timestampMillis: Long = System.currentTimeMillis(),
 )
 
 data class PaymentRecord(

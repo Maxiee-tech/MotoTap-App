@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mototap.R
 import com.example.mototap.core.model.JobRequest
-import com.example.mototap.features.driver.BottomNavigationBar
+import com.example.mototap.ui.BottomNavigationBar
 import com.example.mototap.features.driver.TrackingItem
 import com.example.mototap.ui.theme.MotoRed
 
@@ -29,6 +29,7 @@ fun ProviderJobTrackingScreen(
     job: JobRequest?,
     onBack: () -> Unit,
     onChat: () -> Unit,
+    onComplete: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -65,6 +66,12 @@ fun ProviderJobTrackingScreen(
                 )
             )
         },
+        bottomBar = {
+            BottomNavigationBar(
+                currentRoute = "requests",
+                onNavigate = { _ -> }
+            )
+        },
         containerColor = Color.Black
     ) { paddingValues ->
         Column(
@@ -83,7 +90,10 @@ fun ProviderJobTrackingScreen(
             Spacer(modifier = Modifier.weight(1f))
 
             Button(
-                onClick = { /* Handle Complete Job */ },
+                onClick = { 
+                    job?.let { onComplete(it.id) }
+                    onBack()
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
                 shape = androidx.compose.ui.graphics.RectangleShape,
                 modifier = Modifier

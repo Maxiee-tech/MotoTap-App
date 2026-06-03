@@ -11,9 +11,13 @@ interface JobRepository {
         description: String,
         locationLabel: String,
         suggestedPrice: Long,
+        mechanicId: String? = null,
+        jobId: String? = null,
     ): Result<String>
 
     fun observeDriverJobs(driverId: String): Flow<List<JobRequest>>
+
+    fun observeMechanicJobs(mechanicId: String): Flow<List<JobRequest>>
 
     fun observeOpenJobs(): Flow<List<JobRequest>>
 

@@ -64,25 +64,26 @@ fun ChatListScreen(
         },
         containerColor = Color.Black
     ) { paddingValues ->
-        if (chatSummaries.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("No messages yet", color = Color.Gray)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                items(chatSummaries) { summary ->
-                    ChatSummaryItem(
-                        summary = summary,
-                        onClick = { onChatSelected(summary.jobId) }
-                    )
-                    HorizontalDivider(color = Color.DarkGray, thickness = 0.5.dp)
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            // Unread filter or simple stats could go here if needed
+            if (chatSummaries.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("No messages yet", color = Color.Gray)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(chatSummaries) { summary ->
+                        ChatSummaryItem(
+                            summary = summary,
+                            onClick = { onChatSelected(summary.jobId) }
+                        )
+                        HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.5f), thickness = 0.5.dp)
+                    }
                 }
             }
         }
@@ -91,8 +92,10 @@ fun ChatListScreen(
 
 @Composable
 fun ChatSummaryItem(summary: ChatSummary, onClick: () -> Unit) {
+    val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
     val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
     val timeString = sdf.format(Date(summary.lastMessage.timestampMillis))
+    val isUnread = !summary.lastMessage.read && summary.lastMessage.senderId != currentUserId
 
     Row(
         modifier = Modifier
@@ -102,15 +105,15 @@ fun ChatSummaryItem(summary: ChatSummary, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
-            modifier = Modifier.size(50.dp),
+            modifier = Modifier.size(52.dp),
             shape = CircleShape,
-            color = Color.DarkGray
+            color = Color.DarkGray.copy(alpha = 0.5f)
         ) {
             Icon(
                 imageVector = Icons.Default.Person,
                 contentDescription = null,
                 tint = Color.LightGray,
-                modifier = Modifier.padding(10.dp)
+                modifier = Modifier.padding(12.dp)
             )
         }
 
@@ -125,26 +128,47 @@ fun ChatSummaryItem(summary: ChatSummary, onClick: () -> Unit) {
                 Text(
                     text = summary.otherUserName,
                     color = Color.White,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = if (isUnread) FontWeight.ExtraBold else FontWeight.Bold,
                     fontSize = 16.sp
                 )
                 Text(
                     text = timeString,
-                    color = Color.Gray,
-                    fontSize = 12.sp
+                    color = if (isUnread) Color(0xFF25D366) else Color.Gray,
+                    fontSize = 12.sp,
+                    fontWeight = if (isUnread) FontWeight.Bold else FontWeight.Normal
                 )
             }
             
             Spacer(modifier = Modifier.height(4.dp))
             
-            Text(
-                text = summary.lastMessage.text,
-                color = if (summary.lastMessage.read) Color.Gray else Color.LightGray,
-                fontSize = 14.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontWeight = if (summary.lastMessage.read) FontWeight.Normal else FontWeight.Medium
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = summary.lastMessage.text,
+                    color = if (isUnread) Color.White else Color.Gray,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                    fontWeight = if (isUnread) FontWeight.Medium else FontWeight.Normal
+                )
+                
+                if (isUnread) {
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .size(22.dp)
+                            .background(Color(0xFF25D366), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "!", // Could be dynamic count if available
+                            color = Color.Black,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
         }
     }
 }

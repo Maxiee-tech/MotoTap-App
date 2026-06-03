@@ -1,13 +1,18 @@
 package com.example.mototap.features.mechanic
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,60 +36,78 @@ fun ChatScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var textState by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(uiState.messages.size) {
+        if (uiState.messages.isNotEmpty()) {
+            listState.animateScrollToItem(uiState.messages.size - 1)
+        }
+    }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
-                    Text(
-                        text = "CHAT",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = uiState.otherParticipantName.uppercase(), 
+                            color = Color.White, 
+                            fontWeight = FontWeight.Bold, 
+                            fontSize = 18.sp
+                        )
+                        if (uiState.isOtherTyping) {
+                            Text("typing...", color = Color.Green, fontSize = 10.sp)
+                        } else {
+                            Text("Online", color = Color.Green, fontSize = 10.sp)
+                        }
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White
-                        )
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MotoRed
-                )
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MotoRed)
             )
         },
-        containerColor = Color.Black
+        containerColor = Color(0xFF0B141A)
     ) { paddingValues ->
+        // Standard Column layout with imePadding on the whole container
         Column(
             modifier = modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(top = paddingValues.calculateTopPadding())
+                .imePadding() // This is the key to pushing everything up together
         ) {
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
                 contentPadding = PaddingValues(vertical = 16.dp)
             ) {
                 items(uiState.messages) { message ->
-                    MessageBubble(
-                        message = message,
-                        isCurrentUser = message.senderId == currentUserId
-                    )
+                    MessageBubble(message = message, isCurrentUser = message.senderId == currentUserId)
+                }
+                
+                if (uiState.isOtherTyping) {
+                    item {
+                        TypingIndicator()
+                    }
                 }
             }
 
             ChatInput(
                 text = textState,
-                onTextChange = { textState = it },
+                onTextChange = { 
+                    textState = it
+                    viewModel.setTypingStatus(it.isNotBlank())
+                },
                 onSend = {
                     viewModel.sendMessage(textState)
+                    viewModel.setTypingStatus(false)
                     textState = ""
                 }
             )
@@ -95,73 +118,122 @@ fun ChatScreen(
 @Composable
 fun MessageBubble(message: ChatMessage, isCurrentUser: Boolean) {
     val alignment = if (isCurrentUser) Alignment.CenterEnd else Alignment.CenterStart
-    val bgColor = if (isCurrentUser) MotoRed else Color.DarkGray
-    val shape = if (isCurrentUser) {
-        RoundedCornerShape(12.dp, 12.dp, 0.dp, 12.dp)
-    } else {
-        RoundedCornerShape(12.dp, 12.dp, 12.dp, 0.dp)
-    }
+    val bgColor = if (isCurrentUser) Color(0xFF005C4B) else Color(0xFF202C33)
+    val shape = if (isCurrentUser) RoundedCornerShape(12.dp, 0.dp, 12.dp, 12.dp) else RoundedCornerShape(0.dp, 12.dp, 12.dp, 12.dp)
 
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = alignment
-    ) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = 280.dp)
-                .background(bgColor, shape)
-                .padding(12.dp)
-        ) {
-            Text(text = message.text, color = Color.White, fontSize = 15.sp)
-            Text(
-                text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestampMillis)),
-                color = Color.LightGray,
-                fontSize = 10.sp,
-                modifier = Modifier.align(Alignment.End)
-            )
+    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), contentAlignment = alignment) {
+        Column(modifier = Modifier.widthIn(max = 300.dp).background(bgColor, shape).padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(text = message.text, color = Color.White, fontSize = 15.sp, lineHeight = 20.sp)
+            Row(modifier = Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestampMillis)),
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 11.sp
+                )
+                if (isCurrentUser) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = if (message.read) Icons.Default.DoneAll else Icons.Default.Done,
+                        contentDescription = null,
+                        tint = if (message.read) Color(0xFF53BDEB) else Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-fun ChatInput(
-    text: String,
-    onTextChange: (String) -> Unit,
-    onSend: () -> Unit
-) {
+fun TypingIndicator() {
+    val infiniteTransition = rememberInfiniteTransition(label = "typing")
+    
+    @Composable
+    fun animateDot(delay: Int): State<Float> {
+        return infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = keyframes {
+                    durationMillis = 1000
+                    0f at delay
+                    1f at delay + 300
+                    0f at delay + 600
+                },
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "dot"
+        )
+    }
+
+    val dot1 by animateDot(0)
+    val dot2 by animateDot(200)
+    val dot3 by animateDot(400)
+
+    Row(
+        modifier = Modifier
+            .padding(vertical = 8.dp)
+            .background(Color(0xFF202C33), RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Dot(dot1)
+        Dot(dot2)
+        Dot(dot3)
+    }
+}
+
+@Composable
+fun Dot(alpha: Float) {
+    Box(
+        modifier = Modifier
+            .size(6.dp)
+            .background(Color.LightGray.copy(alpha = alpha), CircleShape)
+    )
+}
+
+@Composable
+fun ChatInput(text: String, onTextChange: (String) -> Unit, onSend: () -> Unit) {
+    // Simple Surface that respects navigation bars when keyboard is closed
     Surface(
-        color = Color.DarkGray.copy(alpha = 0.5f),
+        color = Color(0xFF1F2C34), 
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
+                .navigationBarsPadding() // Keep it above the bottom pill
                 .padding(8.dp)
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextField(
-                value = text,
-                onValueChange = onTextChange,
-                placeholder = { Text("Type a message...", color = Color.Gray) },
-                modifier = Modifier.weight(1f),
-                colors = TextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
-                )
-            )
-            IconButton(
-                onClick = onSend,
-                enabled = text.isNotBlank()
+            Card(
+                modifier = Modifier.weight(1f), 
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF2A3942)), 
+                shape = RoundedCornerShape(25.dp)
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Send",
-                    tint = if (text.isNotBlank()) MotoRed else Color.Gray
+                TextField(
+                    value = text,
+                    onValueChange = onTextChange,
+                    placeholder = { Text("Message", color = Color.Gray) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent
+                    )
                 )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            FloatingActionButton(
+                onClick = onSend,
+                containerColor = Color(0xFF00A884),
+                contentColor = Color.White,
+                shape = CircleShape,
+                modifier = Modifier.size(48.dp),
+                elevation = FloatingActionButtonDefaults.elevation(0.dp)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Send, "Send", modifier = Modifier.size(20.dp))
             }
         }
     }

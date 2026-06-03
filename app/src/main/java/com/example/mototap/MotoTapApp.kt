@@ -1,7 +1,9 @@
 package com.example.mototap
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import com.example.mototap.core.data.MechanicSeeder
 import com.example.mototap.core.data.firebase.FirebaseAuthRepository
 import com.example.mototap.core.data.firebase.FirestoreChatRepository
 import com.example.mototap.core.data.firebase.FirestoreJobRepository
@@ -16,6 +18,9 @@ fun MotoTapApp() {
     val jobRepository = remember { FirestoreJobRepository(firestore) }
     val chatRepository = remember { FirestoreChatRepository(firestore) }
 
+    LaunchedEffect(Unit) {
+        MechanicSeeder.seedMechanics(firestore, authRepository)
+    }
 
     MotoTapNavHost(
         authRepository = authRepository,

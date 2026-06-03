@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -13,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -26,6 +28,7 @@ data class ServiceGroup(val header: String, val services: List<String>)
 @Composable
 fun SubServiceSelectionScreen(
     categoryName: String,
+    viewModel: DriverHomeViewModel,
     onSubServiceSelected: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -81,7 +84,10 @@ fun SubServiceSelectionScreen(
                 items(group.services) { serviceName ->
                     SubServiceItem(
                         name = serviceName,
-                        onClick = { onSubServiceSelected(serviceName) }
+                        onItemClick = { 
+                            viewModel.onIssueChanged(serviceName)
+                            onSubServiceSelected(serviceName)
+                        }
                     )
                 }
             }
@@ -90,13 +96,11 @@ fun SubServiceSelectionScreen(
 }
 
 @Composable
-fun SubServiceItem(name: String, onClick: () -> Unit) {
+fun SubServiceItem(name: String, onItemClick: () -> Unit) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+        shape = RoundedCornerShape(8.dp)
     ) {
         Row(
             modifier = Modifier
@@ -105,17 +109,28 @@ fun SubServiceItem(name: String, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = name,
-                color = Color.Black,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp
-            )
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MotoRed
-            )
+            // Entire card is now clickable
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onItemClick() }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = name,
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
+
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MotoRed
+                )
+            }
         }
     }
 }
@@ -206,6 +221,22 @@ fun getGroupedServicesForCategory(category: String): List<ServiceGroup> {
                 stringResource(R.string.ac_repair_servicing),
                 stringResource(R.string.radiator_repair),
                 stringResource(R.string.cooling_system_flush)
+            ))
+        )
+        stringResource(R.string.preventive_maintenance) -> listOf(
+            ServiceGroup("", listOf(
+                stringResource(R.string.oil_topup_change),
+                "General Request",
+                stringResource(R.string.coolant_refill),
+                stringResource(R.string.brake_fluid_topup)
+            ))
+        )
+        stringResource(R.string.vehicle_diagnostics) -> listOf(
+            ServiceGroup("", listOf(
+                stringResource(R.string.onsite_diagnostics),
+                "General Request",
+                stringResource(R.string.battery_electrical_check),
+                stringResource(R.string.engine_fault_id)
             ))
         )
         stringResource(R.string.car_wash) -> listOf(

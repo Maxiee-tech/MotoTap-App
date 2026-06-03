@@ -19,7 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mototap.core.model.JobRequest
-import com.example.mototap.features.driver.BottomNavigationBar
+import com.example.mototap.ui.BottomNavigationBar
 import com.example.mototap.ui.theme.MotoRed
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,7 +52,7 @@ fun MechanicDashboardScreen(
         bottomBar = {
             BottomNavigationBar(
                 currentRoute = "home",
-                onNavigate = { route ->
+                onNavigate = { route: String ->
                     when(route) {
                         "requests" -> onNavigateToRequests()
                         "messages" -> onNavigateToMessages()
@@ -70,9 +70,33 @@ fun MechanicDashboardScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // My Jobs Section (Step 5)
+            if (state.ongoingJobs.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "NEW DIRECT BOOKINGS / ACTIVE",
+                        color = MotoRed,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+
+                items(state.ongoingJobs, key = { "ongoing_${it.id}" }) { job ->
+                    MechanicJobCard(
+                        job = job,
+                        onAccept = onAccept,
+                        onStart = onStart,
+                        isOngoing = true
+                    )
+                }
+
+                item { Spacer(modifier = Modifier.height(8.dp)) }
+            }
+
             item {
                 Text(
-                    text = "MECHANIC QUEUE",
+                    text = "PUBLIC QUEUE",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
@@ -83,7 +107,7 @@ fun MechanicDashboardScreen(
             if (state.openJobs.isEmpty()) {
                 item {
                     Box(
-                        modifier = Modifier.fillMaxWidth().height(200.dp),
+                        modifier = Modifier.fillMaxWidth().height(150.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text("No pending requests nearby", color = Color.Gray)
@@ -107,12 +131,13 @@ private fun MechanicJobCard(
     job: JobRequest,
     onAccept: (String) -> Unit,
     onStart: (String) -> Unit,
+    isOngoing: Boolean = false
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
+        colors = CardDefaults.cardColors(containerColor = if (isOngoing) Color(0xFF1F2C34) else Color(0xFF1A1A1A)),
         shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.DarkGray)
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (isOngoing) MotoRed.copy(alpha = 0.5f) else Color.DarkGray)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -133,12 +158,28 @@ private fun MechanicJobCard(
                         fontSize = 18.sp
                     )
                 }
-                Text(
-                    text = "KES ${job.price}",
-                    color = MotoRed,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
+                
+                if (isOngoing) {
+                    Surface(
+                        color = if (job.status.name == "ASSIGNED") Color.Blue.copy(alpha = 0.2f) else MotoRed.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text(
+                            text = job.status.name,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "KES ${job.price}",
+                        color = MotoRed,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -153,23 +194,29 @@ private fun MechanicJobCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedButton(
-                    onClick = { onAccept(job.id) },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("ACCEPT")
+                if (!isOngoing) {
+                    OutlinedButton(
+                        onClick = { onAccept(job.id) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("ACCEPT")
+                    }
                 }
                 
                 Button(
                     onClick = { onStart(job.id) },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
-                    shape = RoundedCornerShape(8.dp)
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isOngoing && job.status.name == "IN_PROGRESS") Color.DarkGray else MotoRed),
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = job.status.name != "IN_PROGRESS"
                 ) {
-                    Text("START", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (job.status.name == "ASSIGNED") "START WORK" else if (job.status.name == "IN_PROGRESS") "IN PROGRESS" else "START", 
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
