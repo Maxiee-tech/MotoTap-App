@@ -4,14 +4,23 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
@@ -24,6 +33,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -31,14 +41,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import android.content.Context
 import com.example.mototap.R
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import com.example.mototap.core.model.JobRequest
 import com.example.mototap.core.model.JobStatus
+import com.example.mototap.core.util.allSelectedServicesPriced
+import com.example.mototap.core.util.isTowingService
+import com.example.mototap.core.util.lookupFlatPrice
+import com.example.mototap.core.util.lookupVehiclePrices
+import com.example.mototap.core.util.parsePriceInput
 import com.example.mototap.ui.BottomNavigationBar
 import com.example.mototap.ui.theme.MotoRed
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.auth.FirebaseAuth
 import com.google.maps.android.compose.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,6 +77,7 @@ fun ProviderDashboardScreen(
 
     var showServiceSelection by remember { mutableStateOf(false) }
     var showLocationSelection by remember { mutableStateOf(false) }
+    var showGarageCatalog by remember { mutableStateOf(false) }
 
     // Force selection logic
     LaunchedEffect(uiState.selectedSkills, uiState.latitude, uiState.longitude) {
@@ -98,6 +119,7 @@ fun ProviderDashboardScreen(
                 title = {
                     Text(
                         text = when {
+                            showGarageCatalog -> "GARAGE SERVICE PRICES"
                             showServiceSelection -> "CHOOSE SERVICES"
                             showLocationSelection -> "SET GARAGE LOCATION"
                             else -> stringResource(R.string.provider_dashboard)
@@ -111,9 +133,10 @@ fun ProviderDashboardScreen(
                     val canGoBack = (!showServiceSelection || uiState.selectedSkills.isNotEmpty()) &&
                                     (!showLocationSelection || (uiState.latitude != null && uiState.longitude != null))
                     
-                    if (canGoBack) {
+                    if (canGoBack || showGarageCatalog) {
                         IconButton(onClick = { 
                             when {
+                                showGarageCatalog -> showGarageCatalog = false
                                 showLocationSelection -> showLocationSelection = false
                                 showServiceSelection -> showServiceSelection = false
                                 else -> onBack()
@@ -128,7 +151,7 @@ fun ProviderDashboardScreen(
                     }
                 },
                 actions = {
-                    if (!showServiceSelection && !showLocationSelection) {
+                    if (!showServiceSelection && !showLocationSelection && !showGarageCatalog) {
                         IconButton(onClick = { showLocationSelection = true }) {
                             Icon(Icons.Default.LocationOn, contentDescription = "Update Location", tint = Color.White)
                         }
@@ -143,7 +166,7 @@ fun ProviderDashboardScreen(
             )
         },
         bottomBar = {
-            if (!showServiceSelection && !showLocationSelection) {
+            if (!showServiceSelection && !showLocationSelection && !showGarageCatalog) {
                 BottomNavigationBar(
                     currentRoute = "home",
                     onNavigate = { route: String ->
@@ -159,22 +182,86 @@ fun ProviderDashboardScreen(
         containerColor = Color.Black
     ) { paddingValues ->
         when {
+            showGarageCatalog -> {
+                Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+                    MechanicServiceSelection(
+                        selectedSkills = uiState.garageSelectedSkills,
+                        servicePrices = uiState.garageServicePrices,
+                        vehiclePrices = uiState.garageVehiclePrices,
+                        onSkillToggled = { viewModel.toggleGarageSkill(it) },
+                        onPriceChanged = { service, price -> viewModel.setGaragePrice(service, price) },
+                        onVehicleRateChanged = { service, make, model, price ->
+                            viewModel.setGarageVehicleRate(service, make, model, price)
+                        },
+                        onVehicleRateRemoved = { service, make, model ->
+                            viewModel.removeGarageVehicleRate(service, make, model)
+                        },
+                        modifier = Modifier.padding(bottom = 80.dp),
+                        showPrices = true,
+                        introText = "Set shop-wide make/model prices for each service. Towing rates are per kilometre (KSh/km).",
+                    )
+
+                    val canSave = uiState.garageSelectedSkills.isNotEmpty() &&
+                        allSelectedServicesPriced(
+                            uiState.garageSelectedSkills,
+                            uiState.garageServicePrices,
+                            uiState.garageVehiclePrices,
+                        )
+
+                    Button(
+                        onClick = { viewModel.saveGarageCatalog { showGarageCatalog = false } },
+                        enabled = canSave && !uiState.isSavingGarageCatalog,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            if (uiState.isSavingGarageCatalog) "SAVING..." else "SAVE GARAGE PRICES",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
             showServiceSelection -> {
                 Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
                     MechanicServiceSelection(
                         selectedSkills = uiState.selectedSkills,
+                        servicePrices = uiState.servicePrices,
+                        vehiclePrices = uiState.serviceVehiclePrices,
                         onSkillToggled = { viewModel.toggleSkill(it) },
-                        modifier = Modifier.padding(bottom = 80.dp)
+                        onPriceChanged = { service, price -> viewModel.setServicePrice(service, price) },
+                        onVehicleRateChanged = { service, make, model, price ->
+                            viewModel.setServiceVehicleRate(service, make, model, price)
+                        },
+                        onVehicleRateRemoved = { service, make, model ->
+                            viewModel.removeServiceVehicleRate(service, make, model)
+                        },
+                        modifier = Modifier.padding(bottom = 80.dp),
+                        showPrices = !uiState.isGarageMember,
                     )
-                    
-                    if (uiState.selectedSkills.isNotEmpty()) {
+
+                    val canSaveServices = uiState.selectedSkills.isNotEmpty() &&
+                        (uiState.isGarageMember ||
+                            allSelectedServicesPriced(
+                                uiState.selectedSkills,
+                                uiState.servicePrices,
+                                uiState.serviceVehiclePrices,
+                            ))
+
+                    if (canSaveServices) {
                         Button(
-                            onClick = { 
-                                showServiceSelection = false
-                                if (uiState.latitude == null || uiState.longitude == null) {
-                                    showLocationSelection = true
+                            onClick = {
+                                viewModel.saveMechanicServices {
+                                    showServiceSelection = false
+                                    if (uiState.latitude == null || uiState.longitude == null) {
+                                        showLocationSelection = true
+                                    }
                                 }
                             },
+                            enabled = !uiState.isSavingServices,
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
                                 .padding(16.dp)
@@ -182,7 +269,26 @@ fun ProviderDashboardScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
                             shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text("SAVE & CONTINUE", fontWeight = FontWeight.Bold)
+                            Text(
+                                if (uiState.isSavingServices) "SAVING..." else "SAVE & CONTINUE",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else if (uiState.selectedSkills.isNotEmpty()) {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(16.dp)
+                                .fillMaxWidth(),
+                            color = Color.DarkGray,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                "Enter a price for every selected service to continue",
+                                color = Color.White,
+                                modifier = Modifier.padding(16.dp),
+                                textAlign = TextAlign.Center
+                            )
                         }
                     } else {
                         Surface(
@@ -282,6 +388,59 @@ fun ProviderDashboardScreen(
                 }
             }
             else -> {
+                val listState = rememberLazyListState()
+                val scope = rememberCoroutineScope()
+                var highlightGarageJobs by remember { mutableStateOf(false) }
+                val prefs = remember {
+                    context.getSharedPreferences("mototap_garage_jobs", Context.MODE_PRIVATE)
+                }
+                val seenKey = "seen_${currentUserId}_${uiState.garageId}"
+                val initKey = "init_${currentUserId}_${uiState.garageId}"
+
+                var showNewJobAlert by remember { mutableStateOf(false) }
+                var unseenCount by remember { mutableIntStateOf(0) }
+
+                LaunchedEffect(uiState.garageJobs, uiState.garageId, currentUserId) {
+                    if (uiState.garageId.isBlank() || currentUserId.isBlank()) {
+                        showNewJobAlert = false
+                        unseenCount = 0
+                        return@LaunchedEffect
+                    }
+                    val currentIds = uiState.garageJobs.map { it.id }.filter { it.isNotBlank() }
+                    val initialized = prefs.getBoolean(initKey, false)
+                    if (!initialized) {
+                        prefs.edit()
+                            .putStringSet(seenKey, currentIds.toSet())
+                            .putBoolean(initKey, true)
+                            .apply()
+                        showNewJobAlert = false
+                        unseenCount = 0
+                        return@LaunchedEffect
+                    }
+                    val seen = prefs.getStringSet(seenKey, emptySet()) ?: emptySet()
+                    val unseen = currentIds.filter { it !in seen }
+                    unseenCount = unseen.size
+                    showNewJobAlert = unseen.isNotEmpty()
+                }
+
+                fun dismissNewJobAlertAndFocus() {
+                    val currentIds = uiState.garageJobs.map { it.id }.filter { it.isNotBlank() }
+                    val seen = (prefs.getStringSet(seenKey, emptySet()) ?: emptySet()).toMutableSet()
+                    seen.addAll(currentIds)
+                    prefs.edit().putStringSet(seenKey, seen).apply()
+                    showNewJobAlert = false
+                    unseenCount = 0
+                    highlightGarageJobs = true
+                    scope.launch {
+                        // After alert is dismissed: services(0), location(1),
+                        // owner extras (prices+invite), then garage jobs header.
+                        val targetIndex = if (uiState.isGarageOwner) 4 else 2
+                        listState.animateScrollToItem(targetIndex)
+                        kotlinx.coroutines.delay(2200)
+                        highlightGarageJobs = false
+                    }
+                }
+
                 Column(
                     modifier = modifier
                         .fillMaxSize()
@@ -289,9 +448,19 @@ fun ProviderDashboardScreen(
                         .padding(16.dp)
                 ) {
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
+                        if (showNewJobAlert && uiState.isGarageMember) {
+                            item(key = "new_job_alert") {
+                                NewGarageJobAlertBanner(
+                                    count = unseenCount,
+                                    onClick = { dismissNewJobAlertAndFocus() },
+                                )
+                            }
+                        }
+
                         item {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
@@ -312,7 +481,21 @@ fun ProviderDashboardScreen(
                                             fontSize = 12.sp
                                         )
                                         Text(
-                                            text = "${uiState.selectedSkills.size} services selected",
+                                            text = when {
+                                                uiState.selectedSkills.isEmpty() -> "No services selected"
+                                                uiState.isGarageMember ->
+                                                    "${uiState.selectedSkills.size} service(s) selected"
+                                                else -> {
+                                                    val pricedCount = uiState.selectedSkills.count { skill ->
+                                                        allSelectedServicesPriced(
+                                                            listOf(skill),
+                                                            uiState.servicePrices,
+                                                            uiState.serviceVehiclePrices,
+                                                        )
+                                                    }
+                                                    "$pricedCount of ${uiState.selectedSkills.size} services priced"
+                                                }
+                                            },
                                             color = Color.White,
                                             fontSize = 14.sp
                                         )
@@ -350,6 +533,98 @@ fun ProviderDashboardScreen(
                                     }
                                     Spacer(modifier = Modifier.weight(1f))
                                     Text("UPDATE", color = MotoRed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+
+                        if (uiState.isGarageOwner) {
+                            item {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = MotoRed.copy(alpha = 0.1f)),
+                                    onClick = { showGarageCatalog = true }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Build, contentDescription = null, tint = MotoRed)
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "GARAGE SERVICE PRICES",
+                                                color = MotoRed,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp
+                                            )
+                                            Text(
+                                                text = if (uiState.garageSelectedSkills.isEmpty())
+                                                    "Set shop prices for your garage"
+                                                else
+                                                    "${uiState.garageSelectedSkills.size} garage service(s) priced",
+                                                color = Color.White,
+                                                fontSize = 14.sp
+                                            )
+                                        }
+                                        Text("EDIT", color = MotoRed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+
+                            item {
+                                GarageInviteCard(
+                                    inviteCode = uiState.inviteCode,
+                                    onRegenerate = { viewModel.regenerateInviteCode() },
+                                )
+                            }
+                        }
+
+                        if (uiState.isGarageMember) {
+                            item(key = "garage_jobs_header") {
+                                val borderColor by animateColorAsState(
+                                    targetValue = if (highlightGarageJobs) MotoRed else Color.Transparent,
+                                    label = "garageJobsHighlight",
+                                )
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .border(2.dp, borderColor, RoundedCornerShape(8.dp))
+                                        .padding(4.dp)
+                                ) {
+                                    Text(
+                                        text = "GARAGE JOBS",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Text(
+                                        text = "Bookings assigned to your garage team",
+                                        color = Color.Gray,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+
+                            if (uiState.garageJobs.isEmpty()) {
+                                item {
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth().height(80.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "No garage jobs yet",
+                                            color = Color.Gray,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+                                }
+                            } else {
+                                items(uiState.garageJobs, key = { "garage_${it.id}" }) { job ->
+                                    GarageJobItem(
+                                        job = job,
+                                        currentUserId = currentUserId,
+                                        onAccept = { viewModel.acceptJob(job.id, currentUserId) },
+                                    )
                                 }
                             }
                         }
@@ -452,98 +727,22 @@ fun ProviderDashboardScreen(
 @Composable
 fun MechanicServiceSelection(
     selectedSkills: List<String>,
+    servicePrices: Map<String, Long>,
+    vehiclePrices: Map<String, Map<String, Long>> = emptyMap(),
     onSkillToggled: (String) -> Unit,
-    modifier: Modifier = Modifier
+    onPriceChanged: (String, Long?) -> Unit,
+    onVehicleRateChanged: (service: String, make: String, model: String, price: Long?) -> Unit = { _, _, _, _ -> },
+    onVehicleRateRemoved: (service: String, make: String, model: String) -> Unit = { _, _, _ -> },
+    modifier: Modifier = Modifier,
+    showPrices: Boolean = true,
+    introText: String? = null,
 ) {
-    val categories = listOf(
+    val categories = com.example.mototap.core.data.SERVICE_CATEGORIES.map { catalogCategory ->
         ServiceCategory(
-            title = stringResource(R.string.road_assistance),
-            services = listOf(
-                stringResource(R.string.jumpstart),
-                stringResource(R.string.fuel_delivery),
-                stringResource(R.string.lockout_assistance)
-            )
-        ),
-        ServiceCategory(
-            title = stringResource(R.string.towing_services),
-            services = listOf(
-                stringResource(R.string.flatbed_towing),
-                stringResource(R.string.wheel_lift_towing),
-                stringResource(R.string.dolly_towing),
-                stringResource(R.string.accident_towing),
-                stringResource(R.string.breakdown_towing),
-                stringResource(R.string.long_distance_towing),
-                stringResource(R.string.off_road_recovery),
-                stringResource(R.string.motorcycle_towing),
-                stringResource(R.string.heavy_vehicle_towing),
-                stringResource(R.string.low_clearance_towing)
-            )
-        ),
-        ServiceCategory(
-            title = stringResource(R.string.mobile_mechanic),
-            services = listOf(
-                stringResource(R.string.onsite_diagnostics),
-                stringResource(R.string.battery_electrical_check),
-                stringResource(R.string.engine_fault_id),
-                stringResource(R.string.battery_replacement),
-                stringResource(R.string.spark_plug_replacement),
-                stringResource(R.string.belt_replacement),
-                stringResource(R.string.hose_leak_fixes),
-                stringResource(R.string.overheating_assistance),
-                stringResource(R.string.brake_fix_temporary),
-                stringResource(R.string.engine_wont_start),
-                stringResource(R.string.oil_topup_change),
-                stringResource(R.string.coolant_refill),
-                stringResource(R.string.brake_fluid_topup),
-                stringResource(R.string.puncture_repair),
-                stringResource(R.string.tire_change)
-            )
-        ),
-        ServiceCategory(
-            title = stringResource(R.string.garage_services),
-            services = listOf(
-                stringResource(R.string.engine_overhaul),
-                stringResource(R.string.timing_belt_replacement),
-                stringResource(R.string.fuel_system_repair),
-                stringResource(R.string.exhaust_system_repair),
-                stringResource(R.string.gearbox_repair),
-                stringResource(R.string.clutch_replacement),
-                stringResource(R.string.transmission_fluid_service),
-                stringResource(R.string.brake_pad_replacement),
-                stringResource(R.string.disc_skimming),
-                stringResource(R.string.full_brake_system_repair),
-                stringResource(R.string.shock_absorber_replacement),
-                stringResource(R.string.steering_rack_repair),
-                stringResource(R.string.wheel_alignment),
-                stringResource(R.string.wiring_overhaul),
-                stringResource(R.string.ecu_repair),
-                stringResource(R.string.alternator_starter_repair),
-                stringResource(R.string.ac_repair_servicing),
-                stringResource(R.string.radiator_repair),
-                stringResource(R.string.cooling_system_flush)
-            )
-        ),
-        ServiceCategory(
-            title = stringResource(R.string.car_wash),
-            services = listOf(
-                stringResource(R.string.exterior_wash),
-                stringResource(R.string.interior_vacuum),
-                stringResource(R.string.tire_cleaning),
-                stringResource(R.string.exterior_interior_cleaning),
-                stringResource(R.string.dashboard_polish),
-                stringResource(R.string.window_cleaning),
-                stringResource(R.string.full_car_detailing),
-                stringResource(R.string.engine_cleaning),
-                stringResource(R.string.underbody_wash),
-                stringResource(R.string.seat_shampoo),
-                stringResource(R.string.leather_conditioning),
-                stringResource(R.string.odor_removal),
-                stringResource(R.string.waxing_polishing),
-                stringResource(R.string.ceramic_coating),
-                stringResource(R.string.headlight_restoration)
-            )
+            title = catalogCategory.name,
+            services = catalogCategory.allItems,
         )
-    )
+    }
 
     LazyColumn(
         modifier = modifier
@@ -553,18 +752,28 @@ fun MechanicServiceSelection(
     ) {
         item {
             Text(
-                text = "Select the services you can offer. Requests matching these will appear in your queue.",
+                text = introText ?: if (showPrices) {
+                    "Select services and set a price for each make and model. Towing uses KSh/km; other services use KSh."
+                } else {
+                    "Select the services you can offer. Prices are set from the garage catalog."
+                },
                 color = Color.LightGray,
                 fontSize = 14.sp,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
         }
-        
+
         items(categories) { category ->
             ExpandableCategory(
                 category = category,
                 selectedSkills = selectedSkills,
-                onSkillToggled = onSkillToggled
+                servicePrices = servicePrices,
+                vehiclePrices = vehiclePrices,
+                onSkillToggled = onSkillToggled,
+                onPriceChanged = onPriceChanged,
+                onVehicleRateChanged = onVehicleRateChanged,
+                onVehicleRateRemoved = onVehicleRateRemoved,
+                showPrices = showPrices,
             )
         }
     }
@@ -572,14 +781,27 @@ fun MechanicServiceSelection(
 
 data class ServiceCategory(val title: String, val services: List<String>)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpandableCategory(
     category: ServiceCategory,
     selectedSkills: List<String>,
-    onSkillToggled: (String) -> Unit
+    servicePrices: Map<String, Long>,
+    vehiclePrices: Map<String, Map<String, Long>>,
+    onSkillToggled: (String) -> Unit,
+    onPriceChanged: (String, Long?) -> Unit,
+    onVehicleRateChanged: (service: String, make: String, model: String, price: Long?) -> Unit,
+    onVehicleRateRemoved: (service: String, make: String, model: String) -> Unit,
+    showPrices: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val selectedInCategory = category.services.count { selectedSkills.contains(it) }
+    val selectedInCategory = category.services.count { service ->
+        selectedSkills.any { it.equals(service, ignoreCase = true) }
+    }
+    val pricedInCategory = category.services.count { service ->
+        selectedSkills.any { it.equals(service, ignoreCase = true) } &&
+            allSelectedServicesPriced(listOf(service), servicePrices, vehiclePrices)
+    }
 
     Column(
         modifier = Modifier
@@ -603,7 +825,13 @@ fun ExpandableCategory(
                 )
                 if (selectedInCategory > 0) {
                     Text(
-                        text = "$selectedInCategory selected",
+                        text = if (!showPrices) {
+                            "$selectedInCategory selected"
+                        } else if (pricedInCategory == selectedInCategory) {
+                            "$selectedInCategory selected, all priced"
+                        } else {
+                            "$selectedInCategory selected, $pricedInCategory priced"
+                        },
                         color = MotoRed.copy(alpha = 0.7f),
                         fontSize = 12.sp
                     )
@@ -619,38 +847,411 @@ fun ExpandableCategory(
         if (expanded) {
             Column(modifier = Modifier.padding(bottom = 8.dp)) {
                 category.services.forEach { service ->
-                    val isSelected = selectedSkills.contains(service)
-                    Row(
+                    val isSelected = selectedSkills.any { it.equals(service, ignoreCase = true) }
+                    val towing = isTowingService(service)
+
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSkillToggled(service) }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
-                        Text(
-                            text = service,
-                            color = if (isSelected) Color.White else Color.Gray,
-                            fontSize = 14.sp,
-                            fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
-                        )
-                        if (isSelected) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = MotoRed,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
                             Box(
                                 modifier = Modifier
                                     .size(20.dp)
-                                    .background(Color.Transparent, CircleShape)
-                                    .border(1.dp, Color.DarkGray, CircleShape)
+                                    .clickable { onSkillToggled(service) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = MotoRed,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(20.dp)
+                                            .background(Color.Transparent, CircleShape)
+                                            .border(1.dp, Color.DarkGray, CircleShape)
+                                    )
+                                }
+                            }
+
+                            Text(
+                                text = service,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onSkillToggled(service) },
+                                color = if (isSelected) Color.White else Color.Gray,
+                                fontSize = 14.sp,
+                                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
+                            )
+                        }
+
+                        if (isSelected && showPrices) {
+                            val perKm = towing
+                            val vehicleRates = lookupVehiclePrices(vehiclePrices, service)
+                            val flatAmount = lookupFlatPrice(servicePrices, service)
+                            if (!perKm && flatAmount != null && flatAmount > 0 && vehicleRates.isEmpty()) {
+                                Text(
+                                    text = "Saved flat rate: KSh ${com.example.mototap.core.util.formatKsh(flatAmount)} (add make/model rates below to match the website)",
+                                    color = Color.Gray,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(top = 8.dp),
+                                )
+                            }
+                            VehicleRatesEditor(
+                                service = service,
+                                rates = vehicleRates,
+                                perKm = perKm,
+                                onRateChanged = { make, model, price ->
+                                    onVehicleRateChanged(service, make, model, price)
+                                },
+                                onRateRemoved = { make, model ->
+                                    onVehicleRateRemoved(service, make, model)
+                                },
+                                modifier = Modifier.padding(top = 8.dp),
                             )
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun VehicleRatesEditor(
+    service: String,
+    rates: Map<String, Long>,
+    perKm: Boolean,
+    onRateChanged: (make: String, model: String, price: Long?) -> Unit,
+    onRateRemoved: (make: String, model: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val makeOptions = remember { com.example.mototap.core.data.VehicleCatalogData.makeNames() }
+    var draftMake by remember(service) { mutableStateOf("") }
+    var draftModel by remember(service) { mutableStateOf("") }
+    var draftPrice by remember(service) { mutableStateOf("") }
+    val modelOptions = remember(draftMake) {
+        com.example.mototap.core.data.VehicleCatalogData.modelsForMake(draftMake)
+    }
+    val unitLabel = if (perKm) "Ksh/km" else "Ksh"
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, Color.DarkGray, RoundedCornerShape(8.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = if (perKm) {
+                "Set a per-km rate for each make and model. Drivers see the best match for their vehicle."
+            } else {
+                "Set a price for each make and model. Drivers see the best match for their vehicle."
+            },
+            color = Color.Gray,
+            fontSize = 12.sp,
+        )
+
+        rates.entries.sortedBy { it.key.lowercase() }.forEach { (key, amount) ->
+            val sep = key.indexOf(':')
+            val make = if (sep >= 0) key.substring(0, sep) else key
+            val model = if (sep >= 0) key.substring(sep + 1) else ""
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = "$make $model — KSh ${com.example.mototap.core.util.formatKsh(amount)}${if (perKm) "/km" else ""}",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { onRateRemoved(make, model) }) {
+                    Text("Remove", color = MotoRed, fontSize = 12.sp)
+                }
+            }
+        }
+
+        var makeExpanded by remember { mutableStateOf(false) }
+        var modelExpanded by remember { mutableStateOf(false) }
+
+        ExposedDropdownMenuBox(
+            expanded = makeExpanded,
+            onExpandedChange = { makeExpanded = !makeExpanded },
+        ) {
+            OutlinedTextField(
+                value = draftMake,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Make") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = makeExpanded) },
+                modifier = Modifier
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                    .fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = MotoRed,
+                    unfocusedBorderColor = Color.DarkGray,
+                    focusedLabelColor = Color.Gray,
+                    unfocusedLabelColor = Color.Gray,
+                ),
+            )
+            ExposedDropdownMenu(
+                expanded = makeExpanded,
+                onDismissRequest = { makeExpanded = false },
+            ) {
+                makeOptions.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = {
+                            draftMake = option
+                            draftModel = ""
+                            makeExpanded = false
+                        },
+                    )
+                }
+            }
+        }
+
+        ExposedDropdownMenuBox(
+            expanded = modelExpanded && draftMake.isNotBlank(),
+            onExpandedChange = { if (draftMake.isNotBlank()) modelExpanded = !modelExpanded },
+        ) {
+            OutlinedTextField(
+                value = draftModel,
+                onValueChange = {},
+                readOnly = true,
+                enabled = draftMake.isNotBlank(),
+                label = { Text("Model") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded) },
+                modifier = Modifier
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                    .fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = MotoRed,
+                    unfocusedBorderColor = Color.DarkGray,
+                    focusedLabelColor = Color.Gray,
+                    unfocusedLabelColor = Color.Gray,
+                ),
+            )
+            ExposedDropdownMenu(
+                expanded = modelExpanded && draftMake.isNotBlank(),
+                onDismissRequest = { modelExpanded = false },
+            ) {
+                modelOptions.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = {
+                            draftModel = option
+                            modelExpanded = false
+                        },
+                    )
+                }
+            }
+        }
+
+        OutlinedTextField(
+            value = draftPrice,
+            onValueChange = { draftPrice = it.filter { ch -> ch.isDigit() } },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text(unitLabel, color = Color.Gray) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = MotoRed,
+                unfocusedBorderColor = Color.DarkGray,
+                cursorColor = MotoRed,
+            ),
+        )
+
+        OutlinedButton(
+            onClick = {
+                val price = parsePriceInput(draftPrice)
+                if (draftMake.isBlank() || draftModel.isBlank() || price == null) return@OutlinedButton
+                onRateChanged(draftMake, draftModel, price)
+                draftMake = ""
+                draftModel = ""
+                draftPrice = ""
+            },
+            enabled = draftMake.isNotBlank() && draftModel.isNotBlank() && parsePriceInput(draftPrice) != null,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MotoRed),
+            border = BorderStroke(1.dp, MotoRed),
+        ) {
+            Text("+ Add vehicle price", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun GarageInviteCard(inviteCode: String, onRegenerate: () -> Unit) {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "GARAGE INVITE CODE",
+                color = MotoRed,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = inviteCode.ifBlank { "—" },
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(
+                    onClick = {
+                        if (inviteCode.isNotBlank()) {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(
+                                android.content.ClipData.newPlainText("Garage invite code", inviteCode)
+                            )
+                            android.widget.Toast.makeText(context, "Invite code copied", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = inviteCode.isNotBlank(),
+                ) {
+                    Text("COPY", color = MotoRed, fontWeight = FontWeight.Bold)
+                }
+                TextButton(onClick = onRegenerate) {
+                    Text("REFRESH", color = MotoRed, fontWeight = FontWeight.Bold)
+                }
+            }
+            Text(
+                text = "Share this code with mechanics so they can join your garage.",
+                color = Color.Gray,
+                fontSize = 12.sp
+            )
+        }
+    }
+}
+
+@Composable
+fun NewGarageJobAlertBanner(count: Int, onClick: () -> Unit) {
+    val infinite = rememberInfiniteTransition(label = "newJobPulse")
+    val pulse by infinite.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(650),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "newJobAlpha",
+    )
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(0.75f + pulse * 0.25f)
+            .clickable(onClick = onClick),
+        color = MotoRed,
+        shape = RoundedCornerShape(8.dp),
+        shadowElevation = 6.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Default.Notifications,
+                contentDescription = null,
+                tint = Color.White,
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = if (count <= 1) {
+                    "YOU HAVE A NEW JOB — CLICK HERE TO VIEW IT"
+                } else {
+                    "YOU HAVE $count NEW JOBS — CLICK HERE TO VIEW THEM"
+                },
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+fun GarageJobItem(
+    job: JobRequest,
+    currentUserId: String,
+    onAccept: () -> Unit,
+) {
+    val assignee = when {
+        job.mechanicId.isNullOrBlank() -> "Unassigned"
+        job.mechanicId == currentUserId -> "You"
+        else -> "Teammate"
+    }
+    val canAccept = job.mechanicId.isNullOrBlank() &&
+        (job.status == JobStatus.REQUESTED || job.status == JobStatus.MATCHING)
+    val towing = com.example.mototap.core.util.isTowingService(job.issueType)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.DarkGray.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+            .padding(12.dp)
+    ) {
+        Text(
+            text = "${job.issueType} — ${job.locationLabel}",
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Status: ${job.status.name} · Mechanic: $assignee",
+            color = Color.Gray,
+            fontSize = 12.sp,
+        )
+        if (job.price > 0) {
+            Text(
+                text = if (towing && job.description.contains("/km", ignoreCase = true)) {
+                    "Estimate: KSh ${com.example.mototap.core.util.formatKsh(job.price)} (${job.description})"
+                } else {
+                    "Price: KSh ${com.example.mototap.core.util.formatKsh(job.price)}"
+                },
+                color = MotoRed,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+        if (canAccept) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = onAccept,
+                colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
+                shape = RoundedCornerShape(4.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                modifier = Modifier.height(32.dp)
+            ) {
+                Text("ACCEPT", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

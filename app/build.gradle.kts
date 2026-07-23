@@ -16,6 +16,12 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        buildConfigField("String", "CLOUDINARY_CLOUD_NAME", "\"deoquaz6p\"")
+        buildConfigField("String", "CLOUDINARY_PRESET_PROFILE_PHOTOS", "\"profile_photos\"")
+        buildConfigField("String", "CLOUDINARY_PRESET_SIGNUP_DOCUMENTS", "\"signup_documents\"")
+        buildConfigField("String", "CLOUDINARY_PRESET_VEHICLES", "\"vehicles\"")
+        buildConfigField("String", "CLOUDINARY_PRESET_USER_UPLOADS", "\"user_uploads\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -34,6 +40,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -53,6 +60,7 @@ dependencies {
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.storage)
     implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.googleid)

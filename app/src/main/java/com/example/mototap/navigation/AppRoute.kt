@@ -8,6 +8,7 @@ sealed class AppRoute(
     data object Splash : AppRoute("splash")
     data object UserSelection : AppRoute("user_selection")
     data object Login : AppRoute("login")
+    data object ForgotPassword : AppRoute("forgot_password")
     data object SignUp : AppRoute("signup")
     
     // Customer Flow
@@ -23,12 +24,29 @@ sealed class AppRoute(
     data object MechanicMap : AppRoute("mechanic_map/{service}") {
         fun createRoute(service: String) = "mechanic_map/${Uri.encode(service)}"
     }
-    data object MechanicDetails : AppRoute("mechanic_details/{mechanicId}") {
-        fun createRoute(mechanicId: String) = "mechanic_details/${Uri.encode(mechanicId)}"
+    data object MechanicDetails : AppRoute("mechanic_details/{mechanicId}?service={service}") {
+        fun createRoute(mechanicId: String, service: String = "") =
+            if (service.isBlank()) {
+                "mechanic_details/${Uri.encode(mechanicId)}"
+            } else {
+                "mechanic_details/${Uri.encode(mechanicId)}?service=${Uri.encode(service)}"
+            }
+    }
+
+    // Spare Parts Dealers Flow
+    data object PartsCategorySelection : AppRoute("parts_category/{category}") {
+        fun createRoute(category: String) = "parts_category/${Uri.encode(category)}"
+    }
+    data object PartsDealerMap : AppRoute("parts_dealer_map/{part}") {
+        fun createRoute(part: String) = "parts_dealer_map/${Uri.encode(part)}"
+    }
+    data object PartsDealerDetails : AppRoute("parts_dealer_details/{dealerId}") {
+        fun createRoute(dealerId: String) = "parts_dealer_details/${Uri.encode(dealerId)}"
     }
 
     // Provider Flow
     data object ProviderDashboard : AppRoute("provider_dashboard")
+    data object PartsDealerHome : AppRoute("parts_dealer_home")
     data object ProviderJobTracking : AppRoute("provider_job_tracking")
     data object RatingReview : AppRoute("rating_review/{mechanicId}") {
         fun createRoute(mechanicId: String) = "rating_review/${Uri.encode(mechanicId)}"

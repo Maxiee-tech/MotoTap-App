@@ -5,6 +5,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import com.example.mototap.core.data.MechanicSeeder
 import com.example.mototap.core.data.firebase.FirebaseAuthRepository
+import com.example.mototap.core.data.firebase.FirebaseGarageRepository
 import com.example.mototap.core.data.firebase.FirestoreChatRepository
 import com.example.mototap.core.data.firebase.FirestoreJobRepository
 import com.example.mototap.navigation.MotoTapNavHost
@@ -14,7 +15,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 @Composable
 fun MotoTapApp() {
     val firestore = FirebaseFirestore.getInstance()
-    val authRepository = remember { FirebaseAuthRepository(FirebaseAuth.getInstance(), firestore) }
+    val garageRepository = remember { FirebaseGarageRepository(firestore) }
+    val authRepository = remember { FirebaseAuthRepository(FirebaseAuth.getInstance(), firestore, garageRepository) }
     val jobRepository = remember { FirestoreJobRepository(firestore) }
     val chatRepository = remember { FirestoreChatRepository(firestore) }
 
@@ -25,6 +27,7 @@ fun MotoTapApp() {
     MotoTapNavHost(
         authRepository = authRepository,
         jobRepository = jobRepository,
-        chatRepository = chatRepository
+        chatRepository = chatRepository,
+        garageRepository = garageRepository,
     )
 }

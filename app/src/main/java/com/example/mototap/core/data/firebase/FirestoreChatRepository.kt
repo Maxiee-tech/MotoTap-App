@@ -155,23 +155,112 @@ class FirestoreChatRepository(
     }
 
     override suspend fun setTypingStatus(jobId: String, userId: String, isTyping: Boolean): Result<Unit> = runCatching {
-        chats.document(jobId.trim())
-            .update("typingStatus.$userId", isTyping)
-            .await()
+        val parts = jobId.split("_")
+        if (parts.size < 3) return@runCatching
+
+        val otherId = if (parts[1] == userId) parts[2] else parts[1]
+        val roomIds = getAllConversationRoomIds(userId, otherId)
+
+        val batch = firestore.batch()
+
+        // 1. Update all room variants
+        roomIds.forEach { roomId ->
+            val roomRef = chats.document(roomId)
+            // Ensure document exists and update top-level fields
+            batch.set(
+                roomRef,
+                mapOf(
+                    "lastActiveMillis" to System.currentTimeMillis(),
+                    "lastActive" to System.currentTimeMillis(),
+                    "participants" to listOf(userId, otherId).sorted()
+                ),
+                SetOptions.merge()
+            )
+            // Update nested typing status
+            batch.update(roomRef, "typingStatus.$userId", isTyping)
+        }
+
+        // 2. Update partner's inbox doc
+        val partnerInboxRef = firestore.collection("users")
+            .document(otherId)
+            .collection("chatPartners")
+            .document(userId)
+
+        batch.set(
+            partnerInboxRef,
+            mapOf(
+                "partnerId" to userId,
+                "partnerIsTyping" to isTyping,
+                "partnerTypingAtMillis" to System.currentTimeMillis()
+            ),
+            SetOptions.merge()
+        )
+
+        batch.commit().await()
     }
 
     override fun observeTypingStatus(jobId: String, currentUserId: String): Flow<Boolean> = callbackFlow {
-        val subscription = chats.document(jobId.trim())
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    trySend(false)
-                    return@addSnapshotListener
-                }
-                
+        val parts = jobId.split("_")
+        if (parts.size < 3) {
+            trySend(false)
+            awaitClose { }
+            return@callbackFlow
+        }
+
+        val partnerId = if (parts[1] == currentUserId) parts[2] else parts[1]
+        val roomIds = getAllConversationRoomIds(currentUserId, partnerId)
+
+        val typingStatuses = mutableMapOf<String, Boolean>()
+        
+        val updateAndSend = { source: String, isTyping: Boolean ->
+            typingStatuses[source] = isTyping
+            trySend(typingStatuses.values.any { it })
+        }
+
+        val subscriptions = mutableListOf<com.google.firebase.firestore.ListenerRegistration>()
+
+        // 1. Listen to all room variants
+        roomIds.forEach { roomId ->
+            val sub = chats.document(roomId).addSnapshotListener { snapshot, _ ->
                 val typingMap = snapshot?.get("typingStatus") as? Map<*, *>
-                val isOtherTyping = typingMap?.entries?.any { it.key != currentUserId && it.value == true } ?: false
-                trySend(isOtherTyping)
+                // Treat these as typing: true, 1, or "true" (string)
+                val status = typingMap?.get(partnerId)
+                val isTyping = when (status) {
+                    true -> true
+                    1, 1L -> true
+                    "true" -> true
+                    else -> false
+                }
+                updateAndSend("room_$roomId", isTyping)
             }
-        awaitClose { subscription.remove() }
+            subscriptions.add(sub)
+        }
+
+        // 2. Listen to partner inbox doc
+        val partnerInboxRef = firestore.collection("users")
+            .document(currentUserId)
+            .collection("chatPartners")
+            .document(partnerId)
+
+        val inboxSub = partnerInboxRef.addSnapshotListener { snapshot, _ ->
+            val partnerIsTyping = snapshot?.getBoolean("partnerIsTyping") ?: false
+            val partnerTypingAtMillis = snapshot?.getLong("partnerTypingAtMillis") ?: 0L
+            
+            val isFresh = System.currentTimeMillis() - partnerTypingAtMillis < 10_000
+            updateAndSend("inbox", partnerIsTyping && isFresh)
+        }
+        subscriptions.add(inboxSub)
+
+        awaitClose { 
+            subscriptions.forEach { it.remove() }
+        }
+    }
+
+    private fun getAllConversationRoomIds(userIdA: String, userIdB: String): List<String> {
+        val sorted = listOf(userIdA, userIdB).sorted()
+        val canonical = "chat_${sorted[0]}_${sorted[1]}"
+        val forward = "chat_${userIdA}_${userIdB}"
+        val reverse = "chat_${userIdB}_${userIdA}"
+        return listOf(canonical, forward, reverse).distinct()
     }
 }

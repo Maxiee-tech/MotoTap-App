@@ -17,7 +17,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,6 +39,12 @@ fun ChatScreen(
     val uiState by viewModel.uiState.collectAsState()
     var textState by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.setTypingStatus(false)
+        }
+    }
 
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) {
@@ -79,6 +87,16 @@ fun ChatScreen(
                 .padding(top = paddingValues.calculateTopPadding())
                 .imePadding() // This is the key to pushing everything up together
         ) {
+            if (uiState.isOtherTyping) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    TypingIndicator(partnerName = uiState.otherParticipantName)
+                }
+            }
+
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -91,23 +109,16 @@ fun ChatScreen(
                 items(uiState.messages) { message ->
                     MessageBubble(message = message, isCurrentUser = message.senderId == currentUserId)
                 }
-                
-                if (uiState.isOtherTyping) {
-                    item {
-                        TypingIndicator()
-                    }
-                }
             }
 
             ChatInput(
                 text = textState,
                 onTextChange = { 
                     textState = it
-                    viewModel.setTypingStatus(it.isNotBlank())
+                    viewModel.onInputChanged(it)
                 },
                 onSend = {
                     viewModel.sendMessage(textState)
-                    viewModel.setTypingStatus(false)
                     textState = ""
                 }
             )
@@ -145,51 +156,62 @@ fun MessageBubble(message: ChatMessage, isCurrentUser: Boolean) {
 }
 
 @Composable
-fun TypingIndicator() {
-    val infiniteTransition = rememberInfiniteTransition(label = "typing")
-    
-    @Composable
-    fun animateDot(delay: Int): State<Float> {
-        return infiniteTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = keyframes {
-                    durationMillis = 1000
-                    0f at delay
-                    1f at delay + 300
-                    0f at delay + 600
-                },
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "dot"
-        )
-    }
-
-    val dot1 by animateDot(0)
-    val dot2 by animateDot(200)
-    val dot3 by animateDot(400)
-
+fun TypingIndicator(partnerName: String) {
     Row(
-        modifier = Modifier
-            .padding(vertical = 8.dp)
-            .background(Color(0xFF202C33), RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Dot(dot1)
-        Dot(dot2)
-        Dot(dot3)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TypingDot(delayMillis = 0)
+            TypingDot(delayMillis = 200)
+            TypingDot(delayMillis = 400)
+        }
+        Text(
+            text = "$partnerName is typing",
+            fontSize = 13.sp,
+            color = Color(0xFF888888),
+            fontStyle = FontStyle.Italic
+        )
     }
 }
 
 @Composable
-fun Dot(alpha: Float) {
+fun TypingDot(delayMillis: Int) {
+    val infinite = rememberInfiniteTransition(label = "typing")
+    val dotAlpha by infinite.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 1000
+                0.25f at delayMillis
+                1f at delayMillis + 300
+                0.25f at delayMillis + 600
+            },
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "dotAlpha"
+    )
+    val dotOffset by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 3f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 1000
+                0f at delayMillis
+                3f at delayMillis + 300
+                0f at delayMillis + 600
+            },
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "dotOffset"
+    )
     Box(
         modifier = Modifier
             .size(6.dp)
-            .background(Color.LightGray.copy(alpha = alpha), CircleShape)
+            .offset(y = (-dotOffset).dp)
+            .alpha(dotAlpha)
+            .background(Color(0xFF888888), CircleShape)
     )
 }
 

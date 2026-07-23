@@ -129,15 +129,23 @@
     <string name="profile">Profile</string>
 
     <string name="login_title">Welcome back</string>
-    <string name="login_subtitle">Sign in to request or receive help nearby.</string>
+    <string name="login_subtitle">Sign in to book mechanics, chat, and track your requests.</string>
     <string name="login_phone_label">Phone number</string>
     <string name="login_pin_label">PIN / Password</string>
     <string name="login_button">Sign in</string>
     <string name="login_loading">Signing in...</string>
     <string name="login_error">Unable to sign in. Please try again.</string>
+    <string name="login_forgot_password">Forgot Password?</string>
+    <string name="login_or_divider">OR</string>
     <string name="login_create_account">No account? Sign up</string>
+    <string name="forgot_password_title">Reset your password</string>
+    <string name="forgot_password_subtitle">Enter your email — if an account exists, we\'ll send a secure reset link.</string>
+    <string name="forgot_password_button">Send reset link</string>
+    <string name="forgot_password_sending">Sending…</string>
+    <string name="forgot_password_success">If an account exists for that email, a reset link has been sent. Check your inbox and spam folder, then sign in with your new password.</string>
+    <string name="forgot_password_back">Back to Sign In</string>
     <string name="signup_title">Create account</string>
-    <string name="signup_subtitle">Join Moto Tap and get support on the road.</string>
+    <string name="signup_subtitle">Join as a driver, mechanic, or parts dealer. Complete all steps to submit your profile for review.</string>
     <string name="signup_name_label">Full name</string>
     <string name="signup_confirm_pin_label">Confirm PIN / Password</string>
     <string name="signup_button">Sign up</string>

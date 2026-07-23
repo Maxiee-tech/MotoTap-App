@@ -26,6 +26,10 @@ class FirestoreJobRepository(
         suggestedPrice: Long,
         mechanicId: String?,
         jobId: String?,
+        garageId: String?,
+        vehicleMake: String?,
+        vehicleModel: String?,
+        vehicleId: String?,
     ): Result<String> = runCatching {
         val doc = if (jobId != null) jobs.document(jobId) else jobs.document()
         doc.set(
@@ -38,9 +42,40 @@ class FirestoreJobRepository(
                 "status" to (if (mechanicId != null) JobStatus.ASSIGNED.name else JobStatus.REQUESTED.name),
                 "price" to suggestedPrice,
                 "createdAtMillis" to System.currentTimeMillis(),
+                "garageId" to (garageId ?: ""),
+                "vehicleMake" to (vehicleMake ?: ""),
+                "vehicleModel" to (vehicleModel ?: ""),
+                "vehicleId" to (vehicleId ?: ""),
             )
         ).await()
         doc.id
+    }
+
+    override fun observeGarageJobs(garageId: String): Flow<List<JobRequest>> = callbackFlow {
+        if (garageId.isBlank()) {
+            trySend(emptyList())
+            awaitClose { }
+            return@callbackFlow
+        }
+        val subscription = jobs
+            .whereEqualTo("garageId", garageId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("FirestoreJobRepo", "Error observing garage jobs: ${error.message}")
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val list = snapshot
+                    ?.documents
+                    ?.mapNotNull { it.toJobRequestOrNull() }
+                    ?.sortedByDescending { it.createdAtMillis }
+                    .orEmpty()
+                trySend(list)
+            }
+        awaitClose {
+            Log.d("FirestoreJobRepo", "Removing garage jobs observer")
+            subscription.remove()
+        }
     }
 
     override fun observeDriverJobs(driverId: String): Flow<List<JobRequest>> = callbackFlow {
@@ -143,14 +178,17 @@ class FirestoreJobRepository(
             .await()
     }
 
-    override suspend fun acceptJob(jobId: String, mechanicId: String): Result<Unit> = runCatching {
-        jobs.document(jobId)
-            .update(
-                mapOf(
-                    "mechanicId" to mechanicId,
-                    "status" to JobStatus.ASSIGNED.name
-                )
-            ).await()
+    override suspend fun acceptJob(
+        jobId: String,
+        mechanicId: String,
+        garageId: String?,
+    ): Result<Unit> = runCatching {
+        val payload = mutableMapOf<String, Any>(
+            "mechanicId" to mechanicId,
+            "status" to JobStatus.ASSIGNED.name,
+        )
+        garageId?.trim()?.takeIf { it.isNotEmpty() }?.let { payload["garageId"] = it }
+        jobs.document(jobId).update(payload).await()
     }
 
     override suspend fun deleteJob(jobId: String): Result<Unit> = runCatching {
@@ -175,6 +213,11 @@ class FirestoreJobRepository(
             status = status,
             price = getLong("price") ?: 0L,
             createdAtMillis = getLong("createdAtMillis") ?: 0L,
+            garageId = getString("garageId") ?: "",
+            vehicleId = getString("vehicleId") ?: "",
+            vehicleMake = getString("vehicleMake") ?: "",
+            vehicleModel = getString("vehicleModel") ?: "",
+            serviceName = getString("serviceName") ?: "",
         )
     }
 }

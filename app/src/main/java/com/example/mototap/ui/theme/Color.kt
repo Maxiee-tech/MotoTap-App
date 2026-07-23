@@ -3,6 +3,7 @@ package com.example.mototap.ui.theme
 import androidx.compose.ui.graphics.Color
 
 val MotoRed = Color(0xFFFF0000)
+val MotoBlue = Color(0xFF0066CC)
 val MotoBlack = Color(0xFF000000)
 val MotoWhite = Color(0xFFFFFFFF)
 val MotoGray = Color(0xFF2C2C2C)

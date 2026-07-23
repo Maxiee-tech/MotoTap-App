@@ -9,8 +9,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Email
@@ -30,6 +28,9 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.example.mototap.core.model.UserProfile
 import com.example.mototap.core.model.Review
+import com.example.mototap.core.util.formatKsh
+import com.example.mototap.core.util.getMechanicServicePrice
+import com.example.mototap.core.util.mechanicServiceInventory
 import com.example.mototap.ui.theme.MotoRed
 import java.text.SimpleDateFormat
 import java.util.*
@@ -38,13 +39,112 @@ import java.util.*
 @Composable
 fun MechanicDetailsPage(
     mechanic: UserProfile,
+    selectedService: String = "",
     reviews: List<Review> = emptyList(),
     isAdmin: Boolean = false,
+    vehicleMake: String = "",
+    vehicleModel: String = "",
     onBack: () -> Unit,
     onChat: () -> Unit,
-    onBookService: (String) -> Unit,
+    onBookService: (serviceName: String, estimatedKm: Double?) -> Unit,
 ) {
     val context = LocalContext.current
+    val services = mechanicServiceInventory(mechanic)
+    val highlightedService = selectedService.trim().takeIf { it.isNotEmpty() }
+    val highlightedPrice = highlightedService?.let {
+        getMechanicServicePrice(mechanic, it, vehicleMake, vehicleModel)
+    }
+    var showTowingKmDialog by remember { mutableStateOf(false) }
+    var towingKmText by remember { mutableStateOf("") }
+    var towingKmError by remember { mutableStateOf<String?>(null) }
+
+    fun requestBook(serviceName: String) {
+        if (com.example.mototap.core.util.isTowingService(serviceName)) {
+            towingKmText = ""
+            towingKmError = null
+            showTowingKmDialog = true
+        } else {
+            onBookService(serviceName, null)
+        }
+    }
+
+    if (showTowingKmDialog) {
+        val rate = highlightedPrice ?: 0L
+        val km = towingKmText.toDoubleOrNull()
+        val estimate = km?.let { com.example.mototap.core.util.estimateTowingTotal(rate, it) }
+        AlertDialog(
+            onDismissRequest = { showTowingKmDialog = false },
+            title = { Text("Towing distance", color = Color.White) },
+            text = {
+                Column {
+                    Text(
+                        text = if (rate > 0) {
+                            "Rate: KSh ${formatKsh(rate)}/km — enter estimated kilometres."
+                        } else {
+                            "Enter estimated kilometres for this tow."
+                        },
+                        color = Color.LightGray,
+                        fontSize = 13.sp,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = towingKmText,
+                        onValueChange = {
+                            towingKmText = it.filter { ch -> ch.isDigit() || ch == '.' }
+                            towingKmError = null
+                        },
+                        label = { Text("Kilometres") },
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = MotoRed,
+                            unfocusedBorderColor = Color.DarkGray,
+                            cursorColor = MotoRed,
+                            focusedLabelColor = Color.Gray,
+                            unfocusedLabelColor = Color.Gray,
+                        ),
+                    )
+                    if (estimate != null) {
+                        Text(
+                            text = "Estimated total: KSh ${formatKsh(estimate)}",
+                            color = MotoRed,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                    towingKmError?.let {
+                        Text(text = it, color = Color(0xFFFF8A80), fontSize = 12.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val parsed = towingKmText.toDoubleOrNull()
+                        if (parsed == null || parsed <= 0.0) {
+                            towingKmError = "Enter a valid distance in km."
+                            return@TextButton
+                        }
+                        showTowingKmDialog = false
+                        onBookService(highlightedService ?: "General Maintenance", parsed)
+                    }
+                ) {
+                    Text("BOOK", color = MotoRed, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTowingKmDialog = false }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            },
+            containerColor = Color(0xFF1A1A1A),
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -81,10 +181,13 @@ fun MechanicDetailsPage(
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Profile Photo & Mechanic Name
-            if (!mechanic.profilePhotoUrl.isNullOrBlank()) {
+            // Profile Photo & Mechanic Name - Fallback to certificate if profile photo is missing
+            val displayPhotoUrl = mechanic.profilePhotoUrl.takeIf { it.isNotBlank() }
+                ?: mechanic.certificatePhotoUrl.takeIf { it.isNotBlank() }
+
+            if (!displayPhotoUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = mechanic.profilePhotoUrl,
+                    model = displayPhotoUrl,
                     contentDescription = "Mechanic Photo",
                     modifier = Modifier
                         .size(100.dp)
@@ -141,29 +244,31 @@ fun MechanicDetailsPage(
                 text = mechanic.institutionName.ifBlank { "Professional Mechanic" },
                 color = Color.Gray,
                 fontSize = 14.sp,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            // Garage Photos
-            if (mechanic.garagePhotos.isNotEmpty()) {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 0.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 24.dp)
-                ) {
-                    items(mechanic.garagePhotos) { photoUrl ->
-                        AsyncImage(
-                            model = photoUrl,
-                            contentDescription = "Garage Photo",
-                            modifier = Modifier
-                                .size(width = 200.dp, height = 120.dp)
-                                .clip(MaterialTheme.shapes.medium),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
+            if (highlightedService != null) {
+                Text(
+                    text = "Service: $highlightedService",
+                    color = Color.LightGray,
+                    fontSize = 13.sp
+                )
+                if (highlightedPrice != null && highlightedPrice > 0) {
+                    Text(
+                        text = com.example.mototap.core.util.formatServicePriceLabel(
+                            highlightedPrice,
+                            highlightedService,
+                        ),
+                        color = MotoRed,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
+            } else {
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             // Location Card
@@ -232,7 +337,7 @@ fun MechanicDetailsPage(
             }
 
             // Available Services Card
-            if (mechanic.availableServices.isNotEmpty()) {
+            if (services.isNotEmpty()) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -253,7 +358,8 @@ fun MechanicDetailsPage(
                             modifier = Modifier.padding(bottom = 12.dp)
                         )
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            mechanic.availableServices.forEach { service ->
+                            services.forEach { service ->
+                                val price = getMechanicServicePrice(mechanic, service, vehicleMake, vehicleModel)
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -278,16 +384,16 @@ fun MechanicDetailsPage(
                                             modifier = Modifier.padding(start = 8.dp)
                                         )
                                     }
-                                    
-                                    TextButton(
-                                        onClick = { onBookService(service) },
-                                        colors = ButtonDefaults.textButtonColors(contentColor = MotoRed),
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                                    ) {
-                                        Text("BOOK", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    if (price != null && price > 0) {
+                                        Text(
+                                            text = com.example.mototap.core.util.formatServicePriceAmount(price, service),
+                                            color = MotoRed,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp
+                                        )
                                     }
                                 }
-                                if (mechanic.availableServices.last() != service) {
+                                if (services.last() != service) {
                                     HorizontalDivider(color = Color.Black.copy(alpha = 0.3f), thickness = 0.5.dp)
                                 }
                             }
@@ -382,9 +488,9 @@ fun MechanicDetailsPage(
                 onClick = onChat,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
-                    .padding(bottom = 12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                    .padding(bottom = 12.dp)
+                    .height(56.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
                 shape = MaterialTheme.shapes.medium
             ) {
                 Text("Chat with Mechanic", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
@@ -392,11 +498,13 @@ fun MechanicDetailsPage(
 
             // Booking Button
             Button(
-                onClick = { onBookService("General Maintenance") },
+                onClick = {
+                    requestBook(highlightedService ?: "General Maintenance")
+                },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
-                    .padding(bottom = 24.dp),
+                    .padding(bottom = 24.dp)
+                    .height(56.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
                 shape = MaterialTheme.shapes.medium
             ) {

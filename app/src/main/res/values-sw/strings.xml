@@ -2,7 +2,15 @@
     <string name="app_name">Moto Tap</string>
     <string name="splash_tagline">Washa safari yako, msaada upo kwa mguso mmoja tu.</string>
     <string name="login_title">Karibu tena</string>
-    <string name="login_subtitle">Ingia ili kuomba au kupokea msaada karibu nawe.</string>
+    <string name="login_subtitle">Ingia ili kuweka oda kwa fundi, kuzungumza, na kufuatilia maombi yako.</string>
+    <string name="login_forgot_password">Umesahau nenosiri?</string>
+    <string name="login_or_divider">AU</string>
+    <string name="forgot_password_title">Weka upya nenosiri lako</string>
+    <string name="forgot_password_subtitle">Weka barua pepe yako — ikiwa akaunti ipo, tutatuma kiungo salama cha kuweka upya.</string>
+    <string name="forgot_password_button">Tuma kiungo cha kuweka upya</string>
+    <string name="forgot_password_sending">Inatuma…</string>
+    <string name="forgot_password_success">Ikiwa akaunti ipo kwa barua pepe hiyo, kiungo cha kuweka upya kimetumwa. Angalia kikasha chako na folda ya barua taka, kisha ingia kwa nenosiri jipya.</string>
+    <string name="forgot_password_back">Rudi kwenye Kuingia</string>
     <string name="login_phone_label">Nambari ya simu</string>
     <string name="login_pin_label">PIN / Nenosiri</string>
     <string name="login_button">Ingia</string>
@@ -10,7 +18,7 @@
     <string name="login_error">Imeshindikana kuingia. Tafadhali jaribu tena.</string>
     <string name="login_create_account">Huna akaunti? Jisajili</string>
     <string name="signup_title">Fungua akaunti</string>
-    <string name="signup_subtitle">Jiunge na Moto Tap upate msaada ukiwa barabarani.</string>
+    <string name="signup_subtitle">Jiunge kama dereva, fundi, au muuzaji wa vipuri. Kamilisha hatua zote kuwasilisha wasifu wako kwa ukaguzi.</string>
     <string name="signup_name_label">Jina kamili</string>
     <string name="signup_confirm_pin_label">Thibitisha PIN / Nenosiri</string>
     <string name="signup_button">Jisajili</string>

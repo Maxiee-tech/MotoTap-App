@@ -3,6 +3,7 @@ package com.example.mototap.core.model
 enum class UserRole {
     DRIVER,
     MECHANIC,
+    PARTS_DEALER,
     ADMIN,
 }
 
@@ -35,6 +36,12 @@ data class VehicleProfile(
     val photoUrl: String = "",
 )
 
+data class RedeemedReward(
+    val title: String = "",
+    val points: Int = 0,
+    val redeemedAtMillis: Long = 0L,
+)
+
 data class UserProfile(
     val id: String = "",
     val name: String = "",
@@ -45,6 +52,10 @@ data class UserProfile(
     val idNumber: String = "",
     val idPhotoUrl: String = "",
     val status: VerificationStatus = VerificationStatus.PENDING,
+
+    // Garage org fields (mirrors web users.garageId / garageRole)
+    val garageId: String = "",
+    val garageRole: String = "",
     
     // Driver specific fields
     val vehicleType: String = "",
@@ -53,6 +64,7 @@ data class UserProfile(
     val vehiclePhotoUrl: String = "",
     val vehicles: List<VehicleProfile> = emptyList(),
     val loyaltyPoints: Int = 0,
+    val redeemedRewards: List<RedeemedReward> = emptyList(),
     
     // Mechanic specific fields
     val certificateNumber: String = "",
@@ -69,6 +81,20 @@ data class UserProfile(
     val rating: Double = 0.0,
     val reviewCount: Int = 0,
     val brandSpecializations: List<String> = emptyList(),
+    val onboardingStep: Int? = null,
+    val onboardingComplete: Boolean = false,
+
+    // Garage-wide default prices mirrored for discovery. Outer key = service name,
+    // inner key = "_default" or "Make:Model" -> KSh price.
+    val garageServicePrices: Map<String, Map<String, Long>> = emptyMap(),
+
+    // Parts dealer specific fields (institutionName doubles as shop name,
+    // experienceYears as years in business)
+    val parts: List<String> = emptyList(),
+    val availableParts: List<String> = emptyList(),
+    val partPrices: Map<String, Long> = emptyMap(),
+    // service name -> { "_default" | "Make" | "Make:Model" -> KSh price }
+    val servicePrices: Map<String, Map<String, Long>> = emptyMap(),
 )
 
 data class MechanicProfile(
@@ -90,6 +116,11 @@ data class JobRequest(
     val status: JobStatus,
     val price: Long,
     val createdAtMillis: Long,
+    val garageId: String = "",
+    val vehicleId: String = "",
+    val vehicleMake: String = "",
+    val vehicleModel: String = "",
+    val serviceName: String = "",
 )
 
 data class ChatMessage(

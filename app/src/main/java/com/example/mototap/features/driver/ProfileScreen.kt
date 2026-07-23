@@ -29,6 +29,7 @@ import coil3.compose.AsyncImage
 import com.example.mototap.features.auth.AuthUiState
 import com.example.mototap.features.auth.AuthViewModel
 import com.example.mototap.R
+import com.example.mototap.core.util.computeLoyalty
 import com.example.mototap.ui.theme.MotoRed
 import com.google.firebase.auth.FirebaseAuth
 import java.text.SimpleDateFormat
@@ -61,6 +62,10 @@ fun ProfileScreen(
     
     var showVehicleDialog by remember { mutableStateOf(false) }
     var editingVehicle by remember { mutableStateOf<com.example.mototap.core.model.VehicleProfile?>(null) }
+
+    val loyaltyPoints = remember(userProfile, driverUiState.jobs) {
+        computeLoyalty(userProfile, driverUiState.jobs).available
+    }
 
     val accountOwnerName = remember(userProfile, currentUserId) {
         userProfile?.name
@@ -158,14 +163,26 @@ fun ProfileScreen(
                             shape = CircleShape,
                             color = MotoRed.copy(alpha = 0.1f)
                         ) {
-                            if (!userProfile?.profilePhotoUrl.isNullOrBlank()) {
+                            val roleName = userProfile?.role?.name
+                            val displayPhotoUrl = userProfile?.profilePhotoUrl?.takeIf { it.isNotBlank() }
+                                ?: when (roleName) {
+                                    "DRIVER" -> userProfile?.vehiclePhotoUrl?.takeIf { it.isNotBlank() }
+                                    "MECHANIC" -> userProfile?.certificatePhotoUrl?.takeIf { it.isNotBlank() } ?: userProfile?.garagePhotos?.firstOrNull()?.takeIf { it.isNotBlank() }
+                                    else -> null
+                                }
+                                ?: FirebaseAuth.getInstance().currentUser?.photoUrl?.toString()
+
+                            if (!displayPhotoUrl.isNullOrBlank()) {
                                 AsyncImage(
-                                    model = userProfile?.profilePhotoUrl,
+                                    model = displayPhotoUrl,
                                     contentDescription = "Profile Photo",
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .clip(CircleShape),
-                                    contentScale = ContentScale.Crop
+                                    contentScale = ContentScale.Crop,
+                                    onError = { error ->
+                                        android.util.Log.e("ProfileScreen", "Coil load failed for: $displayPhotoUrl", error.result.throwable)
+                                    }
                                 )
                             } else {
                                 Icon(
@@ -194,7 +211,7 @@ fun ProfileScreen(
                         
                         if (isDriver) {
                             Text(
-                                text = "Total Points: ${userProfile?.loyaltyPoints ?: 0}",
+                                text = "Total Points: $loyaltyPoints",
                                 color = MotoRed,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
@@ -270,6 +287,7 @@ fun ProfileScreen(
                                 0 -> OverviewTabContent(
                                     userProfile = userProfile,
                                     jobs = driverUiState.jobs,
+                                    loyaltyPoints = loyaltyPoints,
                                     onSeeMore = { selectedTab = 1 },
                                     onBookNow = onBookNow
                                 )
@@ -282,7 +300,7 @@ fun ProfileScreen(
                                     jobs = driverUiState.jobs,
                                     onBookNow = onBookNow
                                 )
-                                3 -> LoyaltyTabContent(userProfile = userProfile)
+                                3 -> LoyaltyTabContent(loyaltyPoints = loyaltyPoints)
                             }
                         }
                     }
@@ -403,6 +421,7 @@ fun ProfileScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VehicleEditDialog(
     vehicle: com.example.mototap.core.model.VehicleProfile?,
@@ -416,13 +435,27 @@ fun VehicleEditDialog(
     var mileage by remember { mutableStateOf(vehicle?.mileage ?: "") }
     var year by remember { mutableStateOf(vehicle?.year ?: "") }
 
+    val makeOptions = remember { com.example.mototap.core.data.VehicleCatalogData.makeNames() }
+    val modelOptions = remember(make) { com.example.mototap.core.data.VehicleCatalogData.modelsForMake(make) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (vehicle == null) "Add Vehicle" else "Edit Vehicle") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(value = make, onValueChange = { make = it }, label = { Text("Make (e.g. Toyota)") })
-                OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Model (e.g. Corolla)") })
+                VehicleCatalogDropdown(
+                    label = "Make",
+                    value = make,
+                    options = makeOptions,
+                    onSelected = { make = it; model = "" },
+                )
+                VehicleCatalogDropdown(
+                    label = "Model",
+                    value = model,
+                    options = modelOptions,
+                    enabled = make.isNotBlank(),
+                    onSelected = { model = it },
+                )
                 OutlinedTextField(value = year, onValueChange = { year = it }, label = { Text("Year") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 OutlinedTextField(value = plate, onValueChange = { plate = it }, label = { Text("License Plate") })
                 OutlinedTextField(value = mileage, onValueChange = { mileage = it }, label = { Text("Current Mileage") })
@@ -460,6 +493,46 @@ fun VehicleEditDialog(
             }
         }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun VehicleCatalogDropdown(
+    label: String,
+    value: String,
+    options: List<String>,
+    enabled: Boolean = true,
+    onSelected: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded && enabled,
+        onExpandedChange = { if (enabled) expanded = !expanded },
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            readOnly = true,
+            enabled = enabled,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded && enabled,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onSelected(option)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -560,6 +633,7 @@ fun VehicleItemRow(name: String, plate: String, onClick: () -> Unit) {
 fun OverviewTabContent(
     userProfile: com.example.mototap.core.model.UserProfile?,
     jobs: List<com.example.mototap.core.model.JobRequest>,
+    loyaltyPoints: Int,
     onSeeMore: () -> Unit,
     onBookNow: (String) -> Unit = {}
 ) {
@@ -647,10 +721,10 @@ fun OverviewTabContent(
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text("Loyalty & Rewards", color = Color.White, fontWeight = FontWeight.Bold)
-                Text("Points Balance: ${userProfile?.loyaltyPoints ?: 0}", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("Points Balance: $loyaltyPoints", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Text("Earn 10 points for every completed service!", color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp)
-                if ((userProfile?.loyaltyPoints ?: 0) >= 50) {
-                    Text("\u2713 Reward Available: Free Car Wash", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                if (loyaltyPoints >= 50) {
+                    Text("\u2713 Reward Available: Free Standard Car Wash", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -830,9 +904,9 @@ fun RemindersTabContent(
 }
 
 @Composable
-fun LoyaltyTabContent(userProfile: com.example.mototap.core.model.UserProfile?) {
-    val points = userProfile?.loyaltyPoints ?: 0
-    
+fun LoyaltyTabContent(loyaltyPoints: Int) {
+    val points = loyaltyPoints
+
     Column(
         modifier = Modifier
             .fillMaxWidth()

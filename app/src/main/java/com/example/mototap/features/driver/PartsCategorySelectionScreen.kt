@@ -16,21 +16,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.mototap.core.data.serviceCategoryByName
 import com.example.mototap.ui.theme.MotoRed
-
-data class ServiceGroup(val header: String, val services: List<String>)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SubServiceSelectionScreen(
+fun PartsCategorySelectionScreen(
     categoryName: String,
-    viewModel: DriverHomeViewModel,
-    onSubServiceSelected: (String) -> Unit,
+    onPartSelected: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val groupedServices = getGroupedServicesForCategory(categoryName)
+    val groups = getPartsGroupsForCategory(categoryName)
 
     Scaffold(
         topBar = {
@@ -66,11 +62,11 @@ fun SubServiceSelectionScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            groupedServices.forEach { group ->
-                if (group.header.isNotEmpty()) {
+            groups.forEach { group ->
+                if (group.title.isNotEmpty()) {
                     item {
                         Text(
-                            text = group.header,
+                            text = group.title.uppercase(),
                             color = MotoRed,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
@@ -78,13 +74,10 @@ fun SubServiceSelectionScreen(
                         )
                     }
                 }
-                items(group.services) { serviceName ->
-                    SubServiceItem(
-                        name = serviceName,
-                        onItemClick = {
-                            viewModel.onIssueChanged(serviceName)
-                            onSubServiceSelected(serviceName)
-                        }
+                items(group.items) { partName ->
+                    PartItemRow(
+                        name = partName,
+                        onItemClick = { onPartSelected(partName) }
                     )
                 }
             }
@@ -93,7 +86,7 @@ fun SubServiceSelectionScreen(
 }
 
 @Composable
-fun SubServiceItem(name: String, onItemClick: () -> Unit) {
+private fun PartItemRow(name: String, onItemClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -120,25 +113,5 @@ fun SubServiceItem(name: String, onItemClick: () -> Unit) {
                 tint = MotoRed
             )
         }
-    }
-}
-
-/**
- * Groups for a top-level category, sourced from [ServiceCatalogData] so
- * driver discovery matches the web catalog / Firebase skills.
- */
-fun getGroupedServicesForCategory(category: String): List<ServiceGroup> {
-    val catalogCategory = serviceCategoryByName(category)
-        ?: return listOf(ServiceGroup("", listOf("General Request")))
-
-    val multiGroup = catalogCategory.groups.size > 1
-    return catalogCategory.groups.map { group ->
-        val hideHeader = !multiGroup &&
-            (group.title.equals(catalogCategory.name, ignoreCase = true) || group.title.isBlank())
-        val header = when {
-            hideHeader -> ""
-            else -> group.title.uppercase()
-        }
-        ServiceGroup(header, group.items)
     }
 }

@@ -7,26 +7,33 @@ import android.location.Location
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import coil3.compose.AsyncImage
 import com.example.mototap.core.model.UserProfile
+import com.example.mototap.core.util.formatDistanceMeters
+import com.example.mototap.core.util.getMechanicServicePrice
+import com.example.mototap.core.util.formatKsh
 import com.example.mototap.ui.theme.MotoRed
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -202,8 +209,12 @@ fun MechanicMapScreen(
                 ) {
                     MechanicInfoCard(
                         mechanic = mechanic,
+                        service = service,
+                        userLocation = uiState.userLocation,
                         isClosest = mechanic.id == closestMechanic?.id,
                         isAdmin = isAdmin,
+                        vehicleMake = uiState.activeVehicleMake,
+                        vehicleModel = uiState.activeVehicleModel,
                         onDismiss = { selectedMechanic = null },
                         onHeaderClick = {
                             coroutineScope.launch {
@@ -258,14 +269,36 @@ fun MechanicMapScreen(
 @Composable
 fun MechanicInfoCard(
     mechanic: UserProfile,
+    service: String,
+    userLocation: LatLng?,
     isClosest: Boolean = false,
     isAdmin: Boolean = false,
+    vehicleMake: String = "",
+    vehicleModel: String = "",
     onDismiss: () -> Unit,
     onHeaderClick: () -> Unit,
     onViewDetails: () -> Unit,
     onCall: () -> Unit,
     onMessage: () -> Unit
 ) {
+    val distanceMeters = remember(mechanic, userLocation) {
+        val userLoc = userLocation
+        val lat = mechanic.latitude
+        val lng = mechanic.longitude
+        if (userLoc == null || lat == null || lng == null) {
+            null
+        } else {
+            val results = FloatArray(1)
+            Location.distanceBetween(userLoc.latitude, userLoc.longitude, lat, lng, results)
+            results[0]
+        }
+    }
+    val servicePrice = getMechanicServicePrice(mechanic, service, vehicleMake, vehicleModel)
+    val displayPhotoUrl = mechanic.profilePhotoUrl.takeIf { it.isNotBlank() }
+    val areaLabel = mechanic.address.trim().takeIf { it.isNotEmpty() }
+        ?.let { "Area: $it" }
+        ?: "Location shared on map"
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -291,12 +324,24 @@ fun MechanicInfoCard(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = null,
-                    tint = MotoRed,
-                    modifier = Modifier.size(40.dp)
-                )
+                if (!displayPhotoUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = displayPhotoUrl,
+                        contentDescription = "Mechanic Photo",
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .border(1.dp, MotoRed, CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        tint = MotoRed,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -305,16 +350,57 @@ fun MechanicInfoCard(
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
                     )
-                    Text(
-                        text = "Professional Mechanic",
-                        color = Color.Gray,
-                        fontSize = 14.sp
-                    )
+                    when {
+                        distanceMeters != null -> {
+                            Text(
+                                text = formatDistanceMeters(distanceMeters),
+                                color = Color.Gray,
+                                fontSize = 13.sp
+                            )
+                        }
+                        userLocation == null -> {
+                            Text(
+                                text = "Calculating distance...",
+                                color = Color.Gray,
+                                fontSize = 13.sp
+                            )
+                        }
+                        mechanic.latitude == null || mechanic.longitude == null -> {
+                            Text(
+                                text = "Location not shared yet",
+                                color = Color.Gray,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
                 }
                 IconButton(onClick = onDismiss) {
                     Text("X", fontWeight = FontWeight.Bold, color = Color.Gray)
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = areaLabel,
+                color = Color.DarkGray,
+                fontSize = 13.sp
+            )
+            if (service.isNotBlank()) {
+                Text(
+                    text = "Service: $service",
+                    color = Color.DarkGray,
+                    fontSize = 13.sp
+                )
+            }
+            if (servicePrice != null && servicePrice > 0) {
+                Text(
+                    text = com.example.mototap.core.util.formatServicePriceAmount(servicePrice, service),
+                    color = MotoRed,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(

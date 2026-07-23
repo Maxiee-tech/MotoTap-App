@@ -1,12 +1,13 @@
 package com.example.mototap.features.auth
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mototap.core.model.UserProfile
 import com.example.mototap.core.model.UserRole
-import com.example.mototap.core.model.VerificationStatus
 import com.example.mototap.core.repository.AuthRepository
+import com.example.mototap.core.util.SignupValidation
 import com.google.firebase.auth.FirebaseAuth
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,7 +19,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 sealed class AuthUiState {
     object Idle : AuthUiState()
     object Loading : AuthUiState()
-    data class Success(val role: String?) : AuthUiState()
+    data class Success(val role: String?, val resumeSignUp: Boolean = false) : AuthUiState()
     data class Error(val message: String) : AuthUiState()
 }
 
@@ -48,7 +49,8 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
     val idPhotoUrl = MutableStateFlow("")
     
     // Driver specific
-    val vehicleType = MutableStateFlow("")
+    val vehicleType = MutableStateFlow("") // kept synced to make for compatibility
+    val vehicleMake = MutableStateFlow("")
     val vehicleModel = MutableStateFlow("")
     val numberPlate = MutableStateFlow("")
     val vehiclePhotoUrl = MutableStateFlow("")
@@ -64,11 +66,66 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
      val garagePhotos = MutableStateFlow<List<String>>(emptyList())
      val availableServices = MutableStateFlow<List<String>>(emptyList())
 
+     // Garage onboarding: "own" (manage a garage) vs "join" (staff via invite)
+     val garageMode = MutableStateFlow("own")
+     val garageInviteCode = MutableStateFlow("")
+
+    fun setVehicleMake(make: String) {
+        vehicleMake.value = make
+        vehicleType.value = make // keep legacy field in sync
+    }
+
     private val _userProfile = MutableStateFlow<UserProfile?>(null)
     val userProfile: StateFlow<UserProfile?> = _userProfile.asStateFlow()
 
-    fun isNameValid(name: String): Boolean {
-        return name.trim().split("\\s+".toRegex()).filter { it.isNotBlank() }.size >= 2
+    fun isNameValid(name: String): Boolean = SignupValidation.isNameValid(name)
+
+    fun getSignupResumeStep(profile: UserProfile?): SignUpStep? {
+        if (profile == null || profile.onboardingComplete) return null
+        val completedStep = profile.onboardingStep ?: 0
+        return when {
+            completedStep >= 2 -> SignUpStep.ADDITIONAL_INFO
+            completedStep >= 1 -> SignUpStep.IDENTITY_VERIFICATION
+            else -> SignUpStep.BASIC_INFO
+        }
+    }
+
+    fun loadProfileIntoSignupState(profile: UserProfile) {
+        name.value = profile.name
+        email.value = profile.email
+        phoneNumber.value = profile.phone
+        role.value = when (profile.role) {
+            UserRole.MECHANIC -> "mechanic"
+            UserRole.PARTS_DEALER -> "parts_dealer"
+            else -> "driver"
+        }
+        profilePhotoUrl.value = profile.profilePhotoUrl
+        idNumber.value = profile.idNumber
+        idPhotoUrl.value = profile.idPhotoUrl
+        vehicleType.value = profile.vehicleType
+        vehicleMake.value = profile.vehicleType // vehicleType stores the make
+        vehicleModel.value = profile.vehicleModel
+        numberPlate.value = profile.numberPlate
+        vehiclePhotoUrl.value = profile.vehiclePhotoUrl
+        certificateNumber.value = profile.certificateNumber
+        certificatePhotoUrl.value = profile.certificatePhotoUrl
+        institutionName.value = profile.institutionName
+        experienceYears.value = profile.experienceYears
+        latitude.value = profile.latitude
+        longitude.value = profile.longitude
+        address.value = profile.address
+        garagePhotos.value = profile.garagePhotos
+        availableServices.value = profile.availableServices
+        _userProfile.value = profile
+    }
+
+    fun resumeIncompleteSignupIfNeeded(onResume: (SignUpStep) -> Unit): Boolean {
+        val profile = _userProfile.value ?: return false
+        val step = getSignupResumeStep(profile) ?: return false
+        loadProfileIntoSignupState(profile)
+        _signUpStep.value = step
+        onResume(step)
+        return true
     }
 
     fun signIn() {
@@ -85,9 +142,17 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
                 val userRole = withTimeoutOrNull(15000) {
                     userId?.let { authRepository.getUserRole(it) }
                 }
-                
-                Log.d("AuthViewModel", "role result: $userRole")
-                _uiState.value = AuthUiState.Success(userRole)
+                val profile = userId?.let { authRepository.getUserProfile(it) }
+                _userProfile.value = profile
+
+                val resumeStep = getSignupResumeStep(profile)
+                if (resumeStep != null && profile != null) {
+                    loadProfileIntoSignupState(profile)
+                    _signUpStep.value = resumeStep
+                }
+
+                Log.d("AuthViewModel", "role result: $userRole, resumeStep: $resumeStep")
+                _uiState.value = AuthUiState.Success(userRole, resumeStep != null)
             } else {
                 val rawError = result.exceptionOrNull()?.message ?: ""
                 val errorMsg = if (rawError.contains("credential", ignoreCase = true) || 
@@ -99,6 +164,21 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
                 }
                 Log.e("AuthViewModel", "signIn failed: $rawError")
                 _uiState.value = AuthUiState.Error(errorMsg)
+            }
+        }
+    }
+
+    fun sendPasswordReset(onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _uiState.value = AuthUiState.Loading
+            val result = authRepository.sendPasswordReset(email.value)
+            if (result.isSuccess) {
+                _uiState.value = AuthUiState.Idle
+                onSuccess()
+            } else {
+                _uiState.value = AuthUiState.Error(
+                    result.exceptionOrNull()?.message ?: "Unable to send reset email."
+                )
             }
         }
     }
@@ -151,17 +231,26 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
         }
     }
 
-    fun checkExistingSession(onRoleFetched: (String?) -> Unit) {
+    fun checkExistingSession(onRoleFetched: (String?, Boolean) -> Unit) {
         val userId = FirebaseAuth.getInstance().currentUser?.uid
         if (userId != null) {
             viewModelScope.launch {
                 Log.d("AuthViewModel", "Existing session found for $userId, fetching role...")
-                // Increased timeout to 15s
-                val userRole = withTimeoutOrNull(15000) {
-                    authRepository.getUserRole(userId)
+                val profile = withTimeoutOrNull(15000) {
+                    authRepository.getUserProfile(userId)
                 }
-                Log.d("AuthViewModel", "Session role: $userRole")
-                onRoleFetched(userRole)
+                _userProfile.value = profile
+                val userRole = profile?.role?.name?.lowercase()
+                    ?: withTimeoutOrNull(15000) { authRepository.getUserRole(userId) }
+
+                val resumeStep = getSignupResumeStep(profile)
+                if (resumeStep != null && profile != null) {
+                    loadProfileIntoSignupState(profile)
+                    _signUpStep.value = resumeStep
+                }
+
+                Log.d("AuthViewModel", "Session role: $userRole, resume: ${resumeStep != null}")
+                onRoleFetched(userRole, resumeStep != null)
             }
         }
     }
@@ -239,12 +328,11 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
         _signUpStep.value = prev
     }
 
-    fun uploadImage(uri: android.net.Uri, type: String) {
+    fun uploadImage(context: Context, uri: android.net.Uri, type: String) {
         val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return
         viewModelScope.launch {
             _uiState.value = AuthUiState.Loading
-            val path = "users/$userId/$type/${System.currentTimeMillis()}.jpg"
-            val result = authRepository.uploadImage(uri, path)
+            val result = authRepository.uploadSignupImage(userId, type, uri, context)
             if (result.isSuccess) {
                 val url = result.getOrNull() ?: ""
                 when (type) {
@@ -265,48 +353,125 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
         }
     }
 
-    fun completeProfile(onSuccess: () -> Unit) {
+    fun saveIdentityStep(onSuccess: () -> Unit) {
+        if (profilePhotoUrl.value.isBlank()) {
+            _uiState.value = AuthUiState.Error("Please upload a profile photo.")
+            return
+        }
+        if (idPhotoUrl.value.isBlank()) {
+            _uiState.value = AuthUiState.Error("Please upload your ID document photo.")
+            return
+        }
+        if (idNumber.value.isBlank()) {
+            _uiState.value = AuthUiState.Error("Please enter your ID number.")
+            return
+        }
+
         val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return
-        
         viewModelScope.launch {
             _uiState.value = AuthUiState.Loading
-            
-            val userRole = if (role.value == "mechanic") UserRole.MECHANIC else UserRole.DRIVER
-            
-            val profile = UserProfile(
-                id = userId,
-                name = name.value,
-                email = email.value,
-                phone = phoneNumber.value,
-                role = userRole,
+            val result = authRepository.completeSignupStep2(
+                userId = userId,
                 profilePhotoUrl = profilePhotoUrl.value,
-                idNumber = idNumber.value,
                 idPhotoUrl = idPhotoUrl.value,
-                status = VerificationStatus.PENDING,
-                vehicleType = vehicleType.value,
-                vehicleModel = vehicleModel.value,
-                numberPlate = numberPlate.value,
-                vehiclePhotoUrl = vehiclePhotoUrl.value,
-                certificateNumber = certificateNumber.value,
-                certificatePhotoUrl = certificatePhotoUrl.value,
+                idNumber = idNumber.value,
+                role = role.value,
+            )
+            if (result.isSuccess) {
+                _uiState.value = AuthUiState.Idle
+                onSuccess()
+            } else {
+                _uiState.value = AuthUiState.Error(
+                    result.exceptionOrNull()?.message ?: "Failed to save identity details"
+                )
+            }
+        }
+    }
+
+    fun completeProfile(onSuccess: () -> Unit) {
+        val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return
+
+        val validationError = when (role.value) {
+            "mechanic" -> SignupValidation.validateMechanicStep3(
+                garageMode = garageMode.value,
+                inviteCode = garageInviteCode.value,
                 institutionName = institutionName.value,
                 experienceYears = experienceYears.value,
+                certificatePhotoUrl = certificatePhotoUrl.value,
+                garagePhotos = garagePhotos.value,
                 latitude = latitude.value,
                 longitude = longitude.value,
                 address = address.value,
-                garagePhotos = garagePhotos.value,
-                skills = availableServices.value,
-                availableServices = availableServices.value,
-                vehicles = _userProfile.value?.vehicles ?: emptyList() // Keep existing vehicles
             )
-            
-            val result = authRepository.updateUserProfile(profile)
-            
+            "parts_dealer" -> SignupValidation.validateProviderStep3(
+                institutionName = institutionName.value,
+                experienceYears = experienceYears.value,
+                certificatePhotoUrl = certificatePhotoUrl.value,
+                garagePhotos = garagePhotos.value,
+                latitude = latitude.value,
+                longitude = longitude.value,
+                address = address.value,
+                locationLabel = "shop",
+            )
+            else -> SignupValidation.validateDriverStep3(
+                vehicleMake = vehicleMake.value,
+                vehicleModel = vehicleModel.value,
+                numberPlate = numberPlate.value,
+                vehiclePhotoUrl = vehiclePhotoUrl.value,
+            )
+        }
+
+        if (validationError != null) {
+            _uiState.value = AuthUiState.Error(validationError)
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = AuthUiState.Loading
+
+            val result = if (role.value == "mechanic") {
+                val joinMode = garageMode.value.trim() == "join"
+                authRepository.completeSignupStep3Mechanic(
+                    userId = userId,
+                    institutionName = institutionName.value,
+                    experienceYears = experienceYears.value,
+                    certificatePhotoUrl = certificatePhotoUrl.value,
+                    garagePhotos = garagePhotos.value,
+                    latitude = if (joinMode) 0.0 else latitude.value!!,
+                    longitude = if (joinMode) 0.0 else longitude.value!!,
+                    address = address.value,
+                    garageMode = garageMode.value,
+                    inviteCode = garageInviteCode.value,
+                )
+            } else if (role.value == "parts_dealer") {
+                authRepository.completeSignupStep3PartsDealer(
+                    userId = userId,
+                    institutionName = institutionName.value,
+                    experienceYears = experienceYears.value,
+                    certificatePhotoUrl = certificatePhotoUrl.value,
+                    garagePhotos = garagePhotos.value,
+                    latitude = latitude.value!!,
+                    longitude = longitude.value!!,
+                    address = address.value,
+                )
+            } else {
+                authRepository.completeSignupStep3Driver(
+                    userId = userId,
+                    vehicleMake = vehicleMake.value,
+                    vehicleModel = vehicleModel.value,
+                    numberPlate = numberPlate.value,
+                    vehiclePhotoUrl = vehiclePhotoUrl.value,
+                )
+            }
+
             if (result.isSuccess) {
+                fetchUserProfile()
                 _uiState.value = AuthUiState.Success(role.value)
                 onSuccess()
             } else {
-                _uiState.value = AuthUiState.Error(result.exceptionOrNull()?.message ?: "Failed to update profile")
+                _uiState.value = AuthUiState.Error(
+                    result.exceptionOrNull()?.message ?: "Failed to complete sign up"
+                )
             }
         }
     }

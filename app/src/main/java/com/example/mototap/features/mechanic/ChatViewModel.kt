@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.mototap.core.model.ChatMessage
 import com.example.mototap.core.repository.AuthRepository
 import com.example.mototap.core.repository.ChatRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -73,7 +75,32 @@ class ChatViewModel(
         }
     }
 
+    private var typingJob: Job? = null
+    private var isCurrentlyTyping = false
+
+    fun onInputChanged(text: String) {
+        val isBlank = text.isBlank()
+        
+        if (!isBlank && !isCurrentlyTyping) {
+            isCurrentlyTyping = true
+            viewModelScope.launch {
+                chatRepository.setTypingStatus(jobId, currentUserId, true)
+            }
+        }
+
+        typingJob?.cancel()
+        typingJob = viewModelScope.launch {
+            delay(2000)
+            if (isCurrentlyTyping) {
+                isCurrentlyTyping = false
+                chatRepository.setTypingStatus(jobId, currentUserId, false)
+            }
+        }
+    }
+
     fun setTypingStatus(isTyping: Boolean) {
+        typingJob?.cancel()
+        isCurrentlyTyping = isTyping
         viewModelScope.launch {
             chatRepository.setTypingStatus(jobId, currentUserId, isTyping)
         }
@@ -81,6 +108,9 @@ class ChatViewModel(
 
     fun sendMessage(text: String) {
         if (text.isBlank()) return
+        
+        // Immediately clear typing status on send
+        setTypingStatus(false)
         
         // OPTIMISTIC UPDATE: Add message to list immediately so it doesn't "disappear"
         val tempId = UUID.randomUUID().toString()
@@ -102,6 +132,14 @@ class ChatViewModel(
                 // If it really failed, we can show an error or remove the message
                 _uiState.value = _uiState.value.copy(error = "Failed to send message")
             }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        // Ensure typing status is cleared when leaving the chat
+        viewModelScope.launch {
+            chatRepository.setTypingStatus(jobId, currentUserId, false)
         }
     }
 }

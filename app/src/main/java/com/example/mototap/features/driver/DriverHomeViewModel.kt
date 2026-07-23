@@ -12,6 +12,10 @@ import com.example.mototap.core.model.JobRequest
 import com.example.mototap.core.model.UserProfile
 import com.example.mototap.core.repository.AuthRepository
 import com.example.mototap.core.repository.JobRepository
+import com.example.mototap.core.util.estimateTowingTotal
+import com.example.mototap.core.util.formatKsh
+import com.example.mototap.core.util.getMechanicServicePrice
+import com.example.mototap.core.util.isTowingService
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.flow.*
@@ -19,6 +23,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import com.google.android.gms.maps.model.LatLng
 import java.util.Locale
+
+enum class DriverMarketplaceMode {
+    MECHANICS,
+    PARTS_DEALERS,
+}
 
 data class DriverUiState(
     val currentUserId: String? = null,
@@ -30,10 +39,15 @@ data class DriverUiState(
     val infoMessage: String? = null,
     val mechanicPhoneNumber: String? = null,
     val availableMechanics: List<UserProfile> = emptyList(),
+    val availablePartsDealers: List<UserProfile> = emptyList(),
+    val marketplaceMode: DriverMarketplaceMode = DriverMarketplaceMode.MECHANICS,
     val isLocating: Boolean = false,
     val selectedMechanic: UserProfile? = null,
     val bookingSuccess: Boolean = false,
     val userLocation: LatLng? = null,
+    val activeVehicleMake: String = "",
+    val activeVehicleModel: String = "",
+    val activeVehicleId: String = "",
 )
 
 class DriverHomeViewModel(
@@ -55,6 +69,7 @@ class DriverHomeViewModel(
                 if (userId == null) {
                     _uiState.update { it.copy(
                         availableMechanics = emptyList(),
+                        availablePartsDealers = emptyList(),
                         jobs = emptyList(),
                         mechanicPhoneNumber = null
                     ) }
@@ -62,8 +77,30 @@ class DriverHomeViewModel(
                 }
 
                 launch {
+                    val profile = authRepository.getUserProfile(userId)
+                    if (profile != null) {
+                        val activeVehicle = profile.vehicles.firstOrNull()
+                        val make = activeVehicle?.make?.takeIf { it.isNotBlank() } ?: profile.vehicleType
+                        val model = activeVehicle?.model?.takeIf { it.isNotBlank() } ?: profile.vehicleModel
+                        _uiState.update {
+                            it.copy(
+                                activeVehicleMake = make,
+                                activeVehicleModel = model,
+                                activeVehicleId = activeVehicle?.id ?: "",
+                            )
+                        }
+                    }
+                }
+
+                launch {
                     authRepository.observeAllMechanics().collect { mechanics ->
                         _uiState.update { it.copy(availableMechanics = mechanics) }
+                    }
+                }
+
+                launch {
+                    authRepository.observeAllPartsDealers().collect { dealers ->
+                        _uiState.update { it.copy(availablePartsDealers = dealers) }
                     }
                 }
 
@@ -133,8 +170,16 @@ class DriverHomeViewModel(
     fun setSelectedMechanic(mechanic: UserProfile) = _uiState.update { it.copy(selectedMechanic = mechanic) }
     fun setUserLocation(location: LatLng) = _uiState.update { it.copy(userLocation = location) }
 
+    fun setMarketplaceMode(mode: DriverMarketplaceMode) =
+        _uiState.update { it.copy(marketplaceMode = mode) }
+
     @SuppressLint("MissingPermission")
-    fun bookMechanic(context: Context, mechanic: UserProfile, serviceName: String) {
+    fun bookMechanic(
+        context: Context,
+        mechanic: UserProfile,
+        serviceName: String,
+        estimatedKm: Double? = null,
+    ) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLocating = true, infoMessage = "Booking $serviceName...") }
             try {
@@ -146,18 +191,60 @@ class DriverHomeViewModel(
                 } ?: "Location shared"
 
                 val userId = _uiState.value.currentUserId ?: return@launch
-                
+                val state = _uiState.value
+
+                // Resolve the mechanic's listed price for this service and the
+                // driver's active vehicle; fall back to a default if unlisted.
+                val rateOrPrice = getMechanicServicePrice(
+                    mechanic,
+                    serviceName,
+                    state.activeVehicleMake,
+                    state.activeVehicleModel,
+                )
+                if (rateOrPrice == null || rateOrPrice <= 0L) {
+                    _uiState.update {
+                        it.copy(
+                            isLocating = false,
+                            infoMessage = "No listed price for this service and vehicle. Ask the mechanic to set a make/model rate.",
+                        )
+                    }
+                    return@launch
+                }
+
+                val towing = isTowingService(serviceName)
+                var resolvedPrice = rateOrPrice
+                var description = "Direct booking"
+                if (towing) {
+                    val km = estimatedKm
+                    val total = km?.let { estimateTowingTotal(rateOrPrice, it) }
+                    if (total == null) {
+                        _uiState.update {
+                            it.copy(
+                                isLocating = false,
+                                infoMessage = "Enter estimated towing distance (km).",
+                            )
+                        }
+                        return@launch
+                    }
+                    resolvedPrice = total
+                    description = "Towing ~$km km @ KSh ${formatKsh(rateOrPrice)}/km"
+                }
+
                 // Reuse the same room ID if an inquiry already exists!
                 // This ensures the chat history moves from Inquiry to Booking.
                 val inquiryId = "chat_${userId}_${mechanic.id}"
                 val result = jobRepository.createJob(
                     driverId = userId, 
                     issueType = serviceName, 
-                    description = "Direct booking", 
+                    description = description, 
                     locationLabel = locationLabel, 
-                    suggestedPrice = 1500L, 
+                    suggestedPrice = resolvedPrice, 
                     mechanicId = mechanic.id, 
-                    jobId = inquiryId
+                    jobId = inquiryId,
+                    garageId = mechanic.garageId,
+                    vehicleMake = state.activeVehicleMake,
+                    vehicleModel = state.activeVehicleModel,
+                    vehicleId = state.activeVehicleId,
                 )
 
                 if (result.isSuccess) {
@@ -171,6 +258,11 @@ class DriverHomeViewModel(
             }
         }
     }
+
+    // Parts dealers reuse the same chat-room mechanism as mechanics; the
+    // "mechanicId" field on the inquiry job simply holds the provider's id.
+    fun openChatWithProvider(providerId: String, onJobIdFound: (String) -> Unit) =
+        openChatWithMechanic(providerId, onJobIdFound)
 
     fun openChatWithMechanic(mechanicId: String, onJobIdFound: (String) -> Unit) {
         val userId = _uiState.value.currentUserId ?: return

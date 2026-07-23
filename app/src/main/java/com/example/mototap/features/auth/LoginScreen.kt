@@ -25,6 +25,7 @@ fun LoginScreen(
     viewModel: AuthViewModel,
     onLoginSuccess: (String?) -> Unit,
     onNavigateToSignUp: () -> Unit,
+    onNavigateToForgotPassword: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -36,10 +37,15 @@ fun LoginScreen(
     LaunchedEffect(uiState) {
         Log.d("LoginScreen", "uiState change detected: $uiState")
         if (uiState is AuthUiState.Success) {
-            val role = (uiState as AuthUiState.Success).role
-            Log.d("LoginScreen", "Success detected, navigating with role: $role")
-            onLoginSuccess(role)
-            viewModel.resetState()
+            val success = uiState as AuthUiState.Success
+            Log.d("LoginScreen", "Success detected, role: ${success.role}, resumeSignUp: ${success.resumeSignUp}")
+            if (success.resumeSignUp) {
+                onNavigateToSignUp()
+                viewModel.resetUiState()
+            } else {
+                onLoginSuccess(success.role)
+                viewModel.resetState()
+            }
         }
     }
 
@@ -114,6 +120,24 @@ fun LoginScreen(
             )
         )
 
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            horizontalArrangement = Arrangement.End
+        ) {
+            TextButton(
+                onClick = onNavigateToForgotPassword,
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Text(
+                    text = stringResource(id = R.string.login_forgot_password),
+                    color = MotoRed,
+                    fontSize = 14.sp
+                )
+            }
+        }
+
         Button(
             onClick = { viewModel.signIn() },
             enabled = uiState !is AuthUiState.Loading && email.isNotBlank() && password.isNotBlank(),
@@ -142,6 +166,8 @@ fun LoginScreen(
                 modifier = Modifier.padding(top = 16.dp),
             )
         }
+
+        AuthOrDivider(modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
 
         TextButton(
             onClick = {

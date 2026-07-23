@@ -13,7 +13,13 @@ interface JobRepository {
         suggestedPrice: Long,
         mechanicId: String? = null,
         jobId: String? = null,
+        garageId: String? = null,
+        vehicleMake: String? = null,
+        vehicleModel: String? = null,
+        vehicleId: String? = null,
     ): Result<String>
+
+    fun observeGarageJobs(garageId: String): Flow<List<JobRequest>>
 
     fun observeDriverJobs(driverId: String): Flow<List<JobRequest>>
 
@@ -23,7 +29,7 @@ interface JobRepository {
 
     suspend fun updateJobStatus(jobId: String, status: JobStatus): Result<Unit>
     
-    suspend fun acceptJob(jobId: String, mechanicId: String): Result<Unit>
+    suspend fun acceptJob(jobId: String, mechanicId: String, garageId: String? = null): Result<Unit>
 
     suspend fun deleteJob(jobId: String): Result<Unit>
 }

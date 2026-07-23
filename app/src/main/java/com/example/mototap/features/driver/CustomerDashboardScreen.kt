@@ -14,16 +14,46 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.mototap.R
+import com.example.mototap.core.data.SERVICE_DISPLAY_GROUP_ORDER
+import com.example.mototap.core.data.serviceCategoriesForDisplayGroup
+import com.example.mototap.ui.theme.MotoBlue
 import com.example.mototap.ui.theme.MotoRed
 import com.example.mototap.ui.BottomNavigationBar
 
 data class ServiceItem(val name: String, val icon: ImageVector)
+
+fun serviceCategoryIcon(categoryId: String): ImageVector = when (categoryId) {
+    "road-assistance" -> Icons.Default.Warning
+    "towing-services" -> Icons.Default.Build
+    "mobile-mechanic" -> Icons.Default.Settings
+    "emergency-tire-services" -> Icons.Default.Info
+    "emergency-battery-services" -> Icons.Default.Face
+    "garage-services" -> Icons.Default.Home
+    "preventive-routine-maintenance" -> Icons.Default.Refresh
+    "vehicle-diagnostics" -> Icons.Default.Search
+    "auto-electrical-services" -> Icons.Default.Info
+    "ac-services" -> Icons.Default.Star
+    "tire-wheel-services" -> Icons.Default.Settings
+    "car-wash-services" -> Icons.Default.ShoppingCart
+    "car-body-cosmetic-services" -> Icons.Default.Edit
+    "car-customization-upgrades" -> Icons.Default.Add
+    "vehicle-electronics-security" -> Icons.Default.Key
+    else -> Icons.Default.Settings
+}
+
+fun partsCategoryIcon(categoryId: String): ImageVector = when (categoryId) {
+    "engine-drivetrain" -> Icons.Default.Settings
+    "brakes" -> Icons.Default.Warning
+    "electrical" -> Icons.Default.Info
+    "vehicle-electronics-security" -> Icons.Default.Lock
+    "filters-fluids" -> Icons.Default.Refresh
+    "body-exterior" -> Icons.Default.DirectionsCar
+    "tyres-wheels" -> Icons.Default.Build
+    else -> Icons.Default.ShoppingCart
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,6 +61,7 @@ fun CustomerDashboardScreen(
     viewModel: DriverHomeViewModel,
     userProfile: com.example.mototap.core.model.UserProfile?,
     onCategorySelected: (String) -> Unit,
+    onPartsCategorySelected: (String) -> Unit = {},
     onNavigateToRequests: () -> Unit = {},
     onNavigateToMessages: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
@@ -38,6 +69,7 @@ fun CustomerDashboardScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val isMechanicsMode = uiState.marketplaceMode == DriverMarketplaceMode.MECHANICS
 
     val activeVehicle = userProfile?.vehicles?.firstOrNull()
 
@@ -97,44 +129,35 @@ fun CustomerDashboardScreen(
                 }
 
                 item {
-                    ServiceCategorySection(
-                        title = stringResource(R.string.emergency_services),
-                        services = listOf(
-                            ServiceItem(stringResource(R.string.road_assistance), Icons.Default.Warning),
-                            ServiceItem(stringResource(R.string.towing_services), Icons.Default.Build),
-                            ServiceItem(stringResource(R.string.mobile_mechanic), Icons.Default.Settings),
-                            ServiceItem(stringResource(R.string.emergency_tire), Icons.Default.Info),
-                            ServiceItem(stringResource(R.string.emergency_battery), Icons.Default.Face)
-                        ),
-                        onCategoryClick = { onCategorySelected(it) }
+                    MarketplaceModeToggle(
+                        isMechanicsMode = isMechanicsMode,
+                        onMechanicsSelected = { viewModel.setMarketplaceMode(DriverMarketplaceMode.MECHANICS) },
+                        onPartsDealersSelected = { viewModel.setMarketplaceMode(DriverMarketplaceMode.PARTS_DEALERS) },
                     )
                 }
 
-                item {
-                    ServiceCategorySection(
-                        title = stringResource(R.string.maintenance_services),
-                        services = listOf(
-                            ServiceItem(stringResource(R.string.garage_services), Icons.Default.Home),
-                            ServiceItem(stringResource(R.string.preventive_maintenance), Icons.Default.Refresh),
-                            ServiceItem(stringResource(R.string.vehicle_diagnostics), Icons.Default.Search),
-                            ServiceItem(stringResource(R.string.auto_electrical), Icons.Default.Info),
-                            ServiceItem(stringResource(R.string.ac_services), Icons.Default.Star),
-                            ServiceItem(stringResource(R.string.tire_wheel_services), Icons.Default.Settings)
-                        ),
-                        onCategoryClick = { onCategorySelected(it) }
-                    )
-                }
-
-                item {
-                    ServiceCategorySection(
-                        title = stringResource(R.string.upgrades_value_added),
-                        services = listOf(
-                            ServiceItem(stringResource(R.string.car_wash), Icons.Default.ShoppingCart),
-                            ServiceItem(stringResource(R.string.car_body_cosmetic), Icons.Default.Edit),
-                            ServiceItem(stringResource(R.string.car_customization), Icons.Default.Add)
-                        ),
-                        onCategoryClick = { onCategorySelected(it) }
-                    )
+                if (isMechanicsMode) {
+                    SERVICE_DISPLAY_GROUP_ORDER.forEach { displayGroup ->
+                        item {
+                            ServiceCategorySection(
+                                title = displayGroup,
+                                services = serviceCategoriesForDisplayGroup(displayGroup).map { category ->
+                                    ServiceItem(category.name, serviceCategoryIcon(category.id))
+                                },
+                                onCategoryClick = { onCategorySelected(it) }
+                            )
+                        }
+                    }
+                } else {
+                    item {
+                        ServiceCategorySection(
+                            title = "Spare Parts",
+                            services = PARTS_CATEGORIES.map { category ->
+                                ServiceItem(category.name, partsCategoryIcon(category.id))
+                            },
+                            onCategoryClick = { onPartsCategorySelected(it) }
+                        )
+                    }
                 }
             }
 
@@ -149,6 +172,60 @@ fun CustomerDashboardScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun MarketplaceModeToggle(
+    isMechanicsMode: Boolean,
+    onMechanicsSelected: () -> Unit,
+    onPartsDealersSelected: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        MarketplaceToggleButton(
+            label = "MECHANICS",
+            isActive = isMechanicsMode,
+            onClick = onMechanicsSelected,
+            modifier = Modifier.weight(1f)
+        )
+        MarketplaceToggleButton(
+            label = "PARTS DEALERS",
+            isActive = !isMechanicsMode,
+            onClick = onPartsDealersSelected,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun MarketplaceToggleButton(
+    label: String,
+    isActive: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(48.dp),
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MotoBlue.copy(alpha = if (isActive) 1f else 0.4f),
+            contentColor = Color.White,
+        ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MotoBlue),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = label,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 12.sp,
+            letterSpacing = 0.6.sp,
+            maxLines = 1,
+        )
     }
 }
 

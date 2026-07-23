@@ -12,17 +12,48 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.mototap.core.repository.AuthRepository
 import com.example.mototap.core.repository.ChatRepository
+import com.example.mototap.core.repository.GarageRepository
 import com.example.mototap.core.repository.JobRepository
 import com.example.mototap.features.auth.*
 import com.example.mototap.features.driver.*
 import com.example.mototap.features.mechanic.*
+import com.example.mototap.features.partsdealer.PartsDealerHomeScreen
 import com.google.firebase.auth.FirebaseAuth
+
+private fun androidx.navigation.NavHostController.navigateAfterAuth(role: String?, popUpRoute: String) {
+    when (role?.lowercase()?.trim()) {
+        "mechanic" -> navigate(AppRoute.ProviderDashboard.route) {
+            popUpTo(popUpRoute) { inclusive = true }
+        }
+        "parts_dealer", "parts dealer" -> navigate(AppRoute.PartsDealerHome.route) {
+            popUpTo(popUpRoute) { inclusive = true }
+        }
+        else -> navigate(AppRoute.CustomerDashboard.route) {
+            popUpTo(popUpRoute) { inclusive = true }
+        }
+    }
+}
+
+private fun androidx.navigation.NavHostController.navigateAfterSession(
+    role: String?,
+    needsSignupResume: Boolean,
+    popUpRoute: String,
+) {
+    if (needsSignupResume) {
+        navigate(AppRoute.SignUp.route) {
+            popUpTo(popUpRoute) { inclusive = true }
+        }
+    } else {
+        navigateAfterAuth(role, popUpRoute)
+    }
+}
 
 @Composable
 fun MotoTapNavHost(
     authRepository: AuthRepository,
     jobRepository: JobRepository,
     chatRepository: ChatRepository,
+    garageRepository: GarageRepository,
 ) {
     val navController = rememberNavController()
     val authViewModel: AuthViewModel = viewModel(
@@ -38,7 +69,7 @@ fun MotoTapNavHost(
         factory = object : androidx.lifecycle.ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                return MechanicDashboardViewModel(authRepository, jobRepository) as T
+                return MechanicDashboardViewModel(authRepository, jobRepository, garageRepository) as T
             }
         }
     )
@@ -77,16 +108,12 @@ fun MotoTapNavHost(
                 onRequestService = {
                     val user = FirebaseAuth.getInstance().currentUser
                     if (user != null) {
-                        authViewModel.checkExistingSession { role ->
-                            if (role == "mechanic") {
-                                navController.navigate(AppRoute.ProviderDashboard.route) {
-                                    popUpTo(AppRoute.UserSelection.route) { inclusive = true }
-                                }
-                            } else {
-                                navController.navigate(AppRoute.CustomerDashboard.route) {
-                                    popUpTo(AppRoute.UserSelection.route) { inclusive = true }
-                                }
-                            }
+                        authViewModel.checkExistingSession { role, needsSignupResume ->
+                            navController.navigateAfterSession(
+                                role = role,
+                                needsSignupResume = needsSignupResume,
+                                popUpRoute = AppRoute.UserSelection.route,
+                            )
                         }
                     } else {
                         navController.navigate(AppRoute.Login.route)
@@ -95,16 +122,12 @@ fun MotoTapNavHost(
                 onProvideService = {
                     val user = FirebaseAuth.getInstance().currentUser
                     if (user != null) {
-                        authViewModel.checkExistingSession { role ->
-                            if (role == "mechanic") {
-                                navController.navigate(AppRoute.ProviderDashboard.route) {
-                                    popUpTo(AppRoute.UserSelection.route) { inclusive = true }
-                                }
-                            } else {
-                                navController.navigate(AppRoute.CustomerDashboard.route) {
-                                    popUpTo(AppRoute.UserSelection.route) { inclusive = true }
-                                }
-                            }
+                        authViewModel.checkExistingSession { role, needsSignupResume ->
+                            navController.navigateAfterSession(
+                                role = role,
+                                needsSignupResume = needsSignupResume,
+                                popUpRoute = AppRoute.UserSelection.route,
+                            )
                         }
                     } else {
                         navController.navigate(AppRoute.Login.route)
@@ -117,27 +140,21 @@ fun MotoTapNavHost(
             LoginScreen(
                 viewModel = authViewModel,
                 onLoginSuccess = { role ->
-                    when (role) {
-                        "customer", "driver" -> {
-                            navController.navigate(AppRoute.CustomerDashboard.route) {
-                                popUpTo(AppRoute.Login.route) { inclusive = true }
-                            }
-                        }
-                        "mechanic" -> {
-                            navController.navigate(AppRoute.ProviderDashboard.route) {
-                                popUpTo(AppRoute.Login.route) { inclusive = true }
-                            }
-                        }
-                        else -> {
-                            navController.navigate(AppRoute.CustomerDashboard.route) {
-                                popUpTo(AppRoute.Login.route) { inclusive = true }
-                            }
-                        }
-                    }
+                    navController.navigateAfterAuth(role, AppRoute.Login.route)
                 },
                 onNavigateToSignUp = {
                     navController.navigate(AppRoute.SignUp.route)
+                },
+                onNavigateToForgotPassword = {
+                    navController.navigate(AppRoute.ForgotPassword.route)
                 }
+            )
+        }
+
+        composable(AppRoute.ForgotPassword.route) {
+            ForgotPasswordScreen(
+                viewModel = authViewModel,
+                onBackToLogin = { navController.popBackStack() }
             )
         }
 
@@ -145,23 +162,7 @@ fun MotoTapNavHost(
             SignUpScreen(
                 viewModel = authViewModel,
                 onSignUpSuccess = { role ->
-                    when (role) {
-                        "customer", "driver" -> {
-                            navController.navigate(AppRoute.CustomerDashboard.route) {
-                                popUpTo(AppRoute.SignUp.route) { inclusive = true }
-                            }
-                        }
-                        "mechanic" -> {
-                            navController.navigate(AppRoute.ProviderDashboard.route) {
-                                popUpTo(AppRoute.SignUp.route) { inclusive = true }
-                            }
-                        }
-                        else -> {
-                            navController.navigate(AppRoute.CustomerDashboard.route) {
-                                popUpTo(AppRoute.SignUp.route) { inclusive = true }
-                            }
-                        }
-                    }
+                    navController.navigateAfterAuth(role, AppRoute.SignUp.route)
                 },
                 onNavigateToLogin = {
                     navController.navigate(AppRoute.Login.route)
@@ -181,7 +182,12 @@ fun MotoTapNavHost(
                 viewModel = driverViewModel,
                 userProfile = userProfile,
                 onCategorySelected = { category ->
+                    driverViewModel.setMarketplaceMode(DriverMarketplaceMode.MECHANICS)
                     navController.navigate(AppRoute.SubServiceSelection.createRoute(category))
+                },
+                onPartsCategorySelected = { category ->
+                    driverViewModel.setMarketplaceMode(DriverMarketplaceMode.PARTS_DEALERS)
+                    navController.navigate(AppRoute.PartsCategorySelection.createRoute(category))
                 },
                 onNavigateToRequests = {
                     navController.navigate(AppRoute.RequestHistory.route)
@@ -222,17 +228,27 @@ fun MotoTapNavHost(
                 viewModel = driverViewModel,
                 isAdmin = userProfile?.role == com.example.mototap.core.model.UserRole.ADMIN,
                 onMechanicDetailsClick = { mechanic ->
-                    navController.navigate(AppRoute.MechanicDetails.createRoute(mechanic.id))
+                    navController.navigate(AppRoute.MechanicDetails.createRoute(mechanic.id, service))
                 },
-                onBack = { navController.popBackStack() }
+                onBack = {
+                    driverViewModel.setMarketplaceMode(DriverMarketplaceMode.MECHANICS)
+                    navController.popBackStack()
+                }
             )
         }
         
         composable(
             route = AppRoute.MechanicDetails.route,
-            arguments = listOf(navArgument("mechanicId") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("mechanicId") { type = NavType.StringType },
+                navArgument("service") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            )
         ) { backStackEntry ->
             val mechanicId = backStackEntry.arguments?.getString("mechanicId") ?: ""
+            val selectedService = backStackEntry.arguments?.getString("service").orEmpty()
             val userProfile by authViewModel.userProfile.collectAsState()
             val uiState by driverViewModel.uiState.collectAsState()
             val mechanic = uiState.availableMechanics.firstOrNull { it.id == mechanicId }
@@ -245,16 +261,73 @@ fun MotoTapNavHost(
                 
                 MechanicDetailsPage(
                     mechanic = mechanic,
+                    selectedService = selectedService,
                     reviews = reviews,
                     isAdmin = isAdmin,
+                    vehicleMake = uiState.activeVehicleMake,
+                    vehicleModel = uiState.activeVehicleModel,
                     onBack = { navController.popBackStack() },
                     onChat = {
                         driverViewModel.openChatWithMechanic(mechanic.id) { jobId ->
                             navController.navigate(AppRoute.Chat.createRoute(jobId))
                         }
                     },
-                    onBookService = { serviceName ->
-                        driverViewModel.bookMechanic(context, mechanic, serviceName)
+                    onBookService = { serviceName, estimatedKm ->
+                        driverViewModel.bookMechanic(context, mechanic, serviceName, estimatedKm)
+                    }
+                )
+            }
+        }
+
+        // Spare Parts Dealers Flow
+        composable(
+            route = AppRoute.PartsCategorySelection.route,
+            arguments = listOf(navArgument("category") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val category = backStackEntry.arguments?.getString("category") ?: ""
+            PartsCategorySelectionScreen(
+                categoryName = category,
+                onPartSelected = { part ->
+                    navController.navigate(AppRoute.PartsDealerMap.createRoute(part))
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = AppRoute.PartsDealerMap.route,
+            arguments = listOf(navArgument("part") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val part = backStackEntry.arguments?.getString("part") ?: ""
+            PartsDealerMapScreen(
+                part = part,
+                viewModel = driverViewModel,
+                onDealerDetailsClick = { dealer ->
+                    navController.navigate(AppRoute.PartsDealerDetails.createRoute(dealer.id))
+                },
+                onBack = {
+                    driverViewModel.setMarketplaceMode(DriverMarketplaceMode.PARTS_DEALERS)
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(
+            route = AppRoute.PartsDealerDetails.route,
+            arguments = listOf(navArgument("dealerId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val dealerId = backStackEntry.arguments?.getString("dealerId") ?: ""
+            val driverState by driverViewModel.uiState.collectAsState()
+            val dealer = driverState.availablePartsDealers.firstOrNull { it.id == dealerId }
+
+            if (dealer != null) {
+                PartsDealerDetailsPage(
+                    dealer = dealer,
+                    onBack = { navController.popBackStack() },
+                    onChat = {
+                        driverViewModel.openChatWithProvider(dealer.id) { jobId ->
+                            navController.navigate(AppRoute.Chat.createRoute(jobId))
+                        }
                     }
                 )
             }
@@ -377,6 +450,21 @@ fun MotoTapNavHost(
             )
         }
         
+        composable(AppRoute.PartsDealerHome.route) {
+            val userProfile by authViewModel.userProfile.collectAsState()
+
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                authViewModel.fetchUserProfile()
+            }
+
+            PartsDealerHomeScreen(
+                profile = userProfile,
+                onNavigateToProfile = {
+                    navController.navigate(AppRoute.Profile.route)
+                },
+            )
+        }
+
         composable(AppRoute.ProviderJobTracking.route) {
             val uiState by mechanicViewModel.uiState.collectAsState()
             val currentJob = uiState.ongoingJobs.firstOrNull()
