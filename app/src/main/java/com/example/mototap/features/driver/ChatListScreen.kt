@@ -14,11 +14,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
 import com.example.mototap.core.repository.ChatRepository
 import com.example.mototap.core.repository.ChatSummary
 import com.example.mototap.ui.theme.MotoRed
@@ -164,12 +167,24 @@ fun ChatSummaryItem(
             shape = CircleShape,
             color = Color.DarkGray.copy(alpha = 0.5f),
         ) {
-            Icon(
-                imageVector = Icons.Default.Person,
-                contentDescription = null,
-                tint = Color.LightGray,
-                modifier = Modifier.padding(12.dp),
-            )
+            val photoUrl = summary.otherUserPhotoUrl.trim()
+            if (photoUrl.isNotEmpty()) {
+                AsyncImage(
+                    model = photoUrl,
+                    contentDescription = summary.otherUserName,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = null,
+                    tint = Color.LightGray,
+                    modifier = Modifier.padding(12.dp),
+                )
+            }
         }
 
         Spacer(modifier = Modifier.width(12.dp))

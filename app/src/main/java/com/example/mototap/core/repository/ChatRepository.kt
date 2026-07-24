@@ -9,6 +9,7 @@ data class ChatSummary(
     val lastMessage: ChatMessage,
     val otherUserName: String,
     val otherUserRole: String = "",
+    val otherUserPhotoUrl: String = "",
     val unread: Boolean = false,
 ) {
     /** Legacy alias used by older call sites / navigation. */
@@ -46,4 +47,14 @@ interface ChatRepository {
         partnerId: String,
         participantNames: Map<String, String> = emptyMap(),
     ): Result<String>
+
+    /**
+     * Resolve a partner's display name the same way as the website:
+     * chatPartners → room participantNames → publicProfiles → users.
+     */
+    suspend fun resolvePartnerName(
+        currentUserId: String,
+        partnerId: String,
+        roomId: String = "",
+    ): String
 }

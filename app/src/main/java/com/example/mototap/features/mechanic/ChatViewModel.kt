@@ -6,18 +6,20 @@ import androidx.lifecycle.viewModelScope
 import com.example.mototap.core.model.ChatMessage
 import com.example.mototap.core.repository.AuthRepository
 import com.example.mototap.core.repository.ChatRepository
+import com.example.mototap.core.util.ChatIds
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
 
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
-    val otherParticipantName: String = "Chat",
+    val otherParticipantName: String = "User",
     val isOtherTyping: Boolean = false,
     val isLoading: Boolean = false,
     val error: String? = null
@@ -33,6 +35,9 @@ class ChatViewModel(
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
+    private val partnerId: String? =
+        ChatIds.partnerIdFromRoomId(jobId, currentUserId)
+
     init {
         observeMessages()
         observeTypingStatus()
@@ -41,33 +46,35 @@ class ChatViewModel(
     }
 
     private fun ensureRoom() {
+        val otherId = partnerId ?: return
         viewModelScope.launch {
-            val parts = jobId.split("_")
-            if (parts.size < 3) return@launch
-            val otherId = if (parts[1] == currentUserId) parts[2] else parts[1]
             val myProfile = authRepository.getUserProfile(currentUserId)
-            val otherProfile = authRepository.getUserProfile(otherId)
+            val resolvedPartnerName = chatRepository.resolvePartnerName(
+                currentUserId,
+                otherId,
+                jobId,
+            )
             chatRepository.ensureConversation(
                 currentUserId,
                 otherId,
                 buildMap {
                     myProfile?.name?.takeIf { it.isNotBlank() }?.let { put(currentUserId, it) }
-                    otherProfile?.name?.takeIf { it.isNotBlank() }?.let { put(otherId, it) }
+                    resolvedPartnerName.takeIf { it.isNotBlank() && it != "User" }
+                        ?.let { put(otherId, it) }
                 },
             )
+            if (resolvedPartnerName.isNotBlank() && resolvedPartnerName != "User") {
+                _uiState.update { it.copy(otherParticipantName = resolvedPartnerName) }
+            }
         }
     }
 
     private fun fetchParticipantName() {
+        val otherId = partnerId ?: return
         viewModelScope.launch {
-            // Extract other userId from jobId (chat_userId_mechanicId)
-            val parts = jobId.split("_")
-            if (parts.size >= 3) {
-                val otherId = if (parts[1] == currentUserId) parts[2] else parts[1]
-                val profile = authRepository.getUserProfile(otherId)
-                if (profile != null) {
-                    _uiState.value = _uiState.value.copy(otherParticipantName = profile.name)
-                }
+            val name = chatRepository.resolvePartnerName(currentUserId, otherId, jobId)
+            if (name.isNotBlank()) {
+                _uiState.update { it.copy(otherParticipantName = name) }
             }
         }
     }
@@ -75,8 +82,8 @@ class ChatViewModel(
     private fun observeMessages() {
         viewModelScope.launch {
             chatRepository.observeMessages(jobId, currentUserId).collect { messages ->
-                _uiState.value = _uiState.value.copy(messages = messages)
-                
+                _uiState.update { it.copy(messages = messages) }
+
                 val unreadCount = messages.count { !it.read && it.senderId != currentUserId }
                 if (unreadCount > 0) {
                     Log.d("ChatViewModel", "Marking $unreadCount messages as read in room $jobId")
@@ -89,7 +96,7 @@ class ChatViewModel(
     private fun observeTypingStatus() {
         viewModelScope.launch {
             chatRepository.observeTypingStatus(jobId, currentUserId).collectLatest { isTyping ->
-                _uiState.value = _uiState.value.copy(isOtherTyping = isTyping)
+                _uiState.update { it.copy(isOtherTyping = isTyping) }
             }
         }
     }
@@ -99,7 +106,7 @@ class ChatViewModel(
 
     fun onInputChanged(text: String) {
         val isBlank = text.isBlank()
-        
+
         if (!isBlank && !isCurrentlyTyping) {
             isCurrentlyTyping = true
             viewModelScope.launch {
@@ -127,11 +134,9 @@ class ChatViewModel(
 
     fun sendMessage(text: String) {
         if (text.isBlank()) return
-        
-        // Immediately clear typing status on send
+
         setTypingStatus(false)
-        
-        // OPTIMISTIC UPDATE: Add message to list immediately so it doesn't "disappear"
+
         val tempId = UUID.randomUUID().toString()
         val optimisticMessage = ChatMessage(
             id = tempId,
@@ -140,20 +145,17 @@ class ChatViewModel(
             timestampMillis = System.currentTimeMillis(),
             read = false
         )
-        
-        val currentList = _uiState.value.messages.toMutableList()
-        currentList.add(optimisticMessage)
-        _uiState.value = _uiState.value.copy(messages = currentList)
-        
+
+        _uiState.update { state ->
+            state.copy(messages = state.messages + optimisticMessage)
+        }
+
         viewModelScope.launch {
             val myName = authRepository.getUserProfile(currentUserId)?.name
-            val parts = jobId.split("_")
-            val otherId = if (parts.size >= 3) {
-                if (parts[1] == currentUserId) parts[2] else parts[1]
-            } else {
-                null
-            }
-            val otherName = otherId?.let { authRepository.getUserProfile(it)?.name }
+            val otherId = partnerId
+            val otherName = otherId?.let {
+                chatRepository.resolvePartnerName(currentUserId, it, jobId)
+            } ?: _uiState.value.otherParticipantName
             val result = chatRepository.sendMessage(
                 jobId,
                 currentUserId,
@@ -162,15 +164,13 @@ class ChatViewModel(
                 recipientName = otherName,
             )
             if (result.isFailure) {
-                // If it really failed, we can show an error or remove the message
-                _uiState.value = _uiState.value.copy(error = "Failed to send message")
+                _uiState.update { it.copy(error = "Failed to send message") }
             }
         }
     }
 
     override fun onCleared() {
         super.onCleared()
-        // Ensure typing status is cleared when leaving the chat
         viewModelScope.launch {
             chatRepository.setTypingStatus(jobId, currentUserId, false)
         }

@@ -9,9 +9,15 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 /**
@@ -249,6 +255,9 @@ class FirestoreChatRepository(
             return@callbackFlow
         }
 
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        var enrichJob: Job? = null
+
         val subscription = firestore.collection("users").document(userId)
             .collection("chatPartners")
             .addSnapshotListener { snapshot, error ->
@@ -260,54 +269,66 @@ class FirestoreChatRepository(
 
                 val entries = snapshot?.documents.orEmpty()
                 if (entries.isEmpty()) {
+                    enrichJob?.cancel()
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
 
-                val byPartner = linkedMapOf<String, ChatSummary>()
-                entries.forEach { doc ->
-                    val partnerId = doc.getString("partnerId") ?: doc.id
-                    if (partnerId.isBlank()) return@forEach
-                    val roomId = doc.getString("roomId")
-                        ?.takeIf { it.isNotBlank() }
-                        ?: ChatIds.roomId(userId, partnerId)
-                    val text = doc.getString("lastMessageText").orEmpty()
-                    val senderId = doc.getString("lastMessageSenderId").orEmpty()
-                    val millis = doc.getLong("lastMessageMillis")
-                        ?: doc.getLong("updatedAtMillis")
-                        ?: 0L
-                    val lastRead = doc.getLong("lastReadAtMillis") ?: 0L
-                    val unread = senderId.isNotEmpty() &&
-                        senderId != userId &&
-                        millis > lastRead
-                    val name = doc.getString("partnerName")?.takeIf { it.isNotBlank() }
-                        ?: "MotoTap User"
-                    val role = (doc.getString("partnerRole") ?: doc.getString("role") ?: "")
-                        .trim()
-                        .lowercase()
+                enrichJob?.cancel()
+                enrichJob = scope.launch {
+                    val byPartner = linkedMapOf<String, ChatSummary>()
+                    entries.forEach { doc ->
+                        val partnerId = doc.getString("partnerId") ?: doc.id
+                        if (partnerId.isBlank()) return@forEach
+                        val roomId = doc.getString("roomId")
+                            ?.takeIf { it.isNotBlank() }
+                            ?: ChatIds.roomId(userId, partnerId)
+                        val text = doc.getString("lastMessageText").orEmpty()
+                        val senderId = doc.getString("lastMessageSenderId").orEmpty()
+                        val millis = doc.getLong("lastMessageMillis")
+                            ?: doc.getLong("updatedAtMillis")
+                            ?: 0L
+                        val lastRead = doc.getLong("lastReadAtMillis") ?: 0L
+                        val unread = senderId.isNotEmpty() &&
+                            senderId != userId &&
+                            millis > lastRead
+                        val name = doc.getString("partnerName")?.takeIf { it.isNotBlank() }
+                            ?: "MotoTap User"
+                        val role = (doc.getString("partnerRole") ?: doc.getString("role") ?: "")
+                            .trim()
+                            .lowercase()
+                        val photoUrl = doc.getString("partnerPhotoUrl")
+                            ?.takeIf { it.isNotBlank() }
+                            ?: resolvePartnerPhotoUrl(partnerId)
 
-                    byPartner[partnerId] = ChatSummary(
-                        roomId = roomId,
-                        partnerId = partnerId,
-                        lastMessage = ChatMessage(
-                            id = "preview_$partnerId",
-                            senderId = senderId,
-                            text = text.ifBlank { "Tap to open conversation" },
-                            timestampMillis = millis,
-                            read = !unread,
-                        ),
-                        otherUserName = name,
-                        otherUserRole = role,
-                        unread = unread,
+                        byPartner[partnerId] = ChatSummary(
+                            roomId = roomId,
+                            partnerId = partnerId,
+                            lastMessage = ChatMessage(
+                                id = "preview_$partnerId",
+                                senderId = senderId,
+                                text = text.ifBlank { "Tap to open conversation" },
+                                timestampMillis = millis,
+                                read = !unread,
+                            ),
+                            otherUserName = name,
+                            otherUserRole = role,
+                            otherUserPhotoUrl = photoUrl,
+                            unread = unread,
+                        )
+                    }
+
+                    trySend(
+                        byPartner.values.sortedByDescending { it.lastMessage.timestampMillis }
                     )
                 }
-
-                trySend(
-                    byPartner.values.sortedByDescending { it.lastMessage.timestampMillis }
-                )
             }
 
-        awaitClose { subscription.remove() }
+        awaitClose {
+            enrichJob?.cancel()
+            scope.cancel()
+            subscription.remove()
+        }
     }
 
     override suspend fun setTypingStatus(
@@ -442,6 +463,45 @@ class FirestoreChatRepository(
         canonical
     }
 
+    override suspend fun resolvePartnerName(
+        currentUserId: String,
+        partnerId: String,
+        roomId: String,
+    ): String {
+        if (partnerId.isBlank()) return "User"
+
+        // 1) Inbox entry written by web/app on open/send
+        runCatching {
+            val entry = firestore.collection("users").document(currentUserId)
+                .collection("chatPartners").document(partnerId)
+                .get()
+                .await()
+            entry.getString("partnerName")?.takeIf { it.isNotBlank() && it != "User" }?.let {
+                return it
+            }
+        }
+
+        // 2) Chat room participantNames (any room-id variant)
+        val roomIds = buildList {
+            if (roomId.isNotBlank()) add(roomId.trim())
+            if (currentUserId.isNotBlank()) {
+                addAll(ChatIds.allRoomIds(currentUserId, partnerId))
+            }
+        }.distinct()
+        for (id in roomIds) {
+            runCatching {
+                val snap = chats.document(id).get().await()
+                val names = snap.get("participantNames") as? Map<*, *>
+                names?.get(partnerId)?.toString()?.trim()
+                    ?.takeIf { it.isNotEmpty() && it != "User" }
+                    ?.let { return it }
+            }
+        }
+
+        // 3) publicProfiles / users (same as website)
+        return resolveDisplayName(partnerId)
+    }
+
     private suspend fun syncChatPartnerEntries(
         participants: List<String>,
         participantNames: Map<String, String>,
@@ -455,6 +515,7 @@ class FirestoreChatRepository(
         val userB = participants[1]
         val pairs = listOf(userA to userB, userB to userA)
         pairs.forEach { (ownerId, partnerId) ->
+            val partnerPhoto = resolvePartnerPhotoUrl(partnerId)
             val payload = mutableMapOf<String, Any>(
                 "partnerId" to partnerId,
                 "partnerName" to (participantNames[partnerId] ?: "User"),
@@ -463,6 +524,9 @@ class FirestoreChatRepository(
                 "roomId" to roomId,
                 "updatedAtMillis" to millis,
             )
+            if (partnerPhoto.isNotBlank()) {
+                payload["partnerPhotoUrl"] = partnerPhoto
+            }
             preview.trim().takeIf { it.isNotEmpty() }?.let {
                 payload["lastMessageText"] = it
                 payload["lastMessageSenderId"] = senderId
@@ -512,6 +576,21 @@ class FirestoreChatRepository(
             user.getString("role")?.takeIf { it.isNotBlank() }?.let { return it.lowercase() }
         }
         return "driver"
+    }
+
+    private suspend fun resolvePartnerPhotoUrl(userId: String): String {
+        if (userId.isBlank()) return ""
+        runCatching {
+            val public = firestore.collection("publicProfiles").document(userId).get().await()
+            public.getString("profilePhotoUrl")?.takeIf { it.isNotBlank() }?.let { return it }
+            public.getString("photoUrl")?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        runCatching {
+            val user = firestore.collection("users").document(userId).get().await()
+            user.getString("profilePhotoUrl")?.takeIf { it.isNotBlank() }?.let { return it }
+            user.getString("photoUrl")?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        return ""
     }
 
     private fun DocumentSnapshot.toChatMessageOrNull(source: String): ChatMessage? {
