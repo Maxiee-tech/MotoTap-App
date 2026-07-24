@@ -37,6 +37,7 @@ class FirestoreJobRepository(
                 "driverId" to driverId,
                 "mechanicId" to mechanicId,
                 "issueType" to issueType,
+                "serviceName" to issueType,
                 "description" to description,
                 "locationLabel" to locationLabel,
                 "status" to (if (mechanicId != null) JobStatus.ASSIGNED.name else JobStatus.REQUESTED.name),
@@ -218,6 +219,9 @@ class FirestoreJobRepository(
             vehicleMake = getString("vehicleMake") ?: "",
             vehicleModel = getString("vehicleModel") ?: "",
             serviceName = getString("serviceName") ?: "",
+            serviceCategory = getString("serviceCategory") ?: "",
+            driverName = getString("driverName") ?: "",
+            driverPhotoUrl = getString("driverPhotoUrl") ?: "",
         )
     }
 }

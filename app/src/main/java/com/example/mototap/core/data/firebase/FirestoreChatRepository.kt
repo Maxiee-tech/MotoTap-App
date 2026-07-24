@@ -4,226 +4,368 @@ import android.util.Log
 import com.example.mototap.core.model.ChatMessage
 import com.example.mototap.core.repository.ChatRepository
 import com.example.mototap.core.repository.ChatSummary
+import com.example.mototap.core.util.ChatIds
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 
+/**
+ * Chat storage aligned with mototap_web `FirebaseChatService.js`:
+ * - Canonical room: `chat_{sortedUidA}_{sortedUidB}`
+ * - Dual-write/read legacy room id variants + `chatMessages`
+ * - Inbox via `users/{uid}/chatPartners/{partnerId}`
+ */
 class FirestoreChatRepository(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
 ) : ChatRepository {
 
     private val chats = firestore.collection("chats")
+    private val legacyMessages = firestore.collection("chatMessages")
 
-    override fun observeMessages(jobId: String): Flow<List<ChatMessage>> = callbackFlow {
-        val chatId = jobId.trim()
-        if (chatId.isEmpty()) {
+    override fun observeMessages(
+        roomId: String,
+        currentUserId: String,
+    ): Flow<List<ChatMessage>> = callbackFlow {
+        val trimmed = roomId.trim()
+        if (trimmed.isEmpty()) {
             trySend(emptyList())
             awaitClose { }
             return@callbackFlow
         }
 
-        // Listen to the messages subcollection
-        val subscription = chats.document(chatId)
-            .collection("messages")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.e("FirestoreChatRepo", "Error: ${error.message}")
-                    trySend(emptyList())
-                    return@addSnapshotListener
+        val participants = resolveParticipants(trimmed, currentUserId)
+        val roomIds = if (participants.size >= 2) {
+            ChatIds.allRoomIds(participants[0], participants[1])
+        } else {
+            listOf(trimmed)
+        }
+
+        val subcollectionByRoom = mutableMapOf<String, List<ChatMessage>>()
+        val legacyByConversation = mutableMapOf<String, List<ChatMessage>>()
+        var legacyByParticipants: List<ChatMessage> = emptyList()
+        val registrations = mutableListOf<ListenerRegistration>()
+
+        fun emit() {
+            val merged = dedupeMessages(
+                subcollectionByRoom.values.flatten() +
+                    legacyByConversation.values.flatten() +
+                    legacyByParticipants
+            ).sortedBy { it.timestampMillis }
+            trySend(merged)
+        }
+
+        roomIds.forEach { id ->
+            registrations += chats.document(id).collection("messages")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.e("FirestoreChatRepo", "messages/$id: ${error.message}")
+                        return@addSnapshotListener
+                    }
+                    subcollectionByRoom[id] = snapshot?.documents
+                        ?.mapNotNull { it.toChatMessageOrNull(source = "subcollection") }
+                        .orEmpty()
+                    emit()
                 }
+        }
 
-                val messages = snapshot?.documents?.mapNotNull { doc ->
-                    val senderId = doc.getString("senderId") ?: return@mapNotNull null
-                    ChatMessage(
-                        id = doc.id,
-                        senderId = senderId,
-                        text = doc.getString("text") ?: "",
-                        timestampMillis = doc.getLong("timestampMillis") ?: 0L,
-                        read = doc.getBoolean("read") ?: false
-                    )
-                }?.sortedBy { it.timestampMillis }.orEmpty()
+        roomIds.forEach { conversationId ->
+            registrations += legacyMessages
+                .whereEqualTo("conversationId", conversationId)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.w("FirestoreChatRepo", "legacy/$conversationId: ${error.message}")
+                        return@addSnapshotListener
+                    }
+                    legacyByConversation[conversationId] = snapshot?.documents
+                        ?.mapNotNull { it.toChatMessageOrNull(source = "legacy") }
+                        .orEmpty()
+                    emit()
+                }
+        }
 
-                trySend(messages)
+        val me = currentUserId.takeIf { it.isNotBlank() }
+        if (participants.size >= 2 && !me.isNullOrBlank()) {
+            val partnerKey = participants.sorted().joinToString("|")
+            registrations += legacyMessages
+                .whereArrayContains("participantIds", me)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.w("FirestoreChatRepo", "legacy participants: ${error.message}")
+                        return@addSnapshotListener
+                    }
+                    legacyByParticipants = snapshot?.documents
+                        ?.mapNotNull { doc ->
+                            val ids = (doc.get("participantIds") as? List<*>)
+                                ?.mapNotNull { it as? String }
+                                ?.sorted()
+                                .orEmpty()
+                            if (ids.joinToString("|") != partnerKey) return@mapNotNull null
+                            doc.toChatMessageOrNull(source = "legacy")
+                        }
+                        .orEmpty()
+                    emit()
+                }
+        }
+
+        awaitClose { registrations.forEach { it.remove() } }
+    }
+
+    override suspend fun sendMessage(
+        roomId: String,
+        senderId: String,
+        text: String,
+        senderName: String?,
+        recipientName: String?,
+    ): Result<Unit> = runCatching {
+        val trimmed = text.trim()
+        require(trimmed.isNotEmpty()) { "Message cannot be empty." }
+        require(trimmed.length <= ChatIds.MAX_MESSAGE_LENGTH) {
+            "Message must be ${ChatIds.MAX_MESSAGE_LENGTH} characters or fewer."
+        }
+
+        val participants = resolveParticipants(roomId, senderId)
+        require(participants.size >= 2) { "Invalid conversation." }
+        val partnerId = participants.first { it != senderId }
+        val roomIds = ChatIds.allRoomIds(participants[0], participants[1])
+        val canonical = ChatIds.roomId(participants[0], participants[1])
+        val now = System.currentTimeMillis()
+        val sortedParticipants = participants.sorted()
+
+        val resolvedSenderName = senderName?.takeIf { it.isNotBlank() }
+            ?: resolveDisplayName(senderId)
+        val resolvedPartnerName = recipientName?.takeIf { it.isNotBlank() }
+            ?: resolveDisplayName(partnerId)
+
+        val messagePayload = mapOf(
+            "senderId" to senderId,
+            "text" to trimmed,
+            "timestampMillis" to now,
+            "read" to false,
+            "participantIds" to sortedParticipants,
+        )
+        val parentUpdate = mapOf(
+            "participants" to sortedParticipants,
+            "participantNames" to mapOf(
+                senderId to resolvedSenderName,
+                partnerId to resolvedPartnerName,
+            ),
+            "lastActiveMillis" to now,
+            "lastActive" to now,
+            "lastMessageText" to trimmed,
+            "lastMessageSenderId" to senderId,
+            "lastMessageMillis" to now,
+        )
+
+        var wroteRoom = false
+        var wroteLegacy = false
+        roomIds.forEach { id ->
+            runCatching {
+                chats.document(id).set(parentUpdate, SetOptions.merge()).await()
+                chats.document(id).collection("messages").add(messagePayload).await()
+                wroteRoom = true
+            }.onFailure {
+                Log.w("FirestoreChatRepo", "Room write failed for $id: ${it.message}")
             }
+            runCatching {
+                legacyMessages.add(
+                    hashMapOf<String, Any>(
+                        "senderId" to senderId,
+                        "text" to trimmed,
+                        "timestampMillis" to now,
+                        "read" to false,
+                        "participantIds" to sortedParticipants,
+                        "conversationId" to id,
+                    )
+                ).await()
+                wroteLegacy = true
+            }.onFailure {
+                Log.w("FirestoreChatRepo", "Legacy write failed for $id: ${it.message}")
+            }
+        }
 
-        awaitClose { subscription.remove() }
+        if (!wroteRoom && !wroteLegacy) {
+            error("Failed to send message")
+        }
+
+        syncChatPartnerEntries(
+            participants = sortedParticipants,
+            participantNames = mapOf(
+                senderId to resolvedSenderName,
+                partnerId to resolvedPartnerName,
+            ),
+            preview = trimmed,
+            millis = now,
+            senderId = senderId,
+            roomId = canonical,
+        )
     }
 
-    override suspend fun sendMessage(jobId: String, senderId: String, text: String): Result<Unit> = runCatching {
-        val chatId = jobId.trim()
-        
-        // 1. Ensure the parent chat document exists (needed for summaries/typing)
-        chats.document(chatId).set(
-            mapOf("lastActive" to System.currentTimeMillis()),
-            SetOptions.merge()
-        ).await()
+    override suspend fun markAsRead(roomId: String, currentUserId: String): Result<Unit> = runCatching {
+        val participants = resolveParticipants(roomId, currentUserId)
+        val roomIds = if (participants.size >= 2) {
+            ChatIds.allRoomIds(participants[0], participants[1])
+        } else {
+            listOf(roomId.trim())
+        }
+        val partnerId = participants.firstOrNull { it != currentUserId }
 
-        // 2. Add message to subcollection
-        chats.document(chatId).collection("messages").add(
-            mapOf(
-                "senderId" to senderId,
-                "text" to text,
-                "timestampMillis" to System.currentTimeMillis(),
-                "read" to false
+        roomIds.forEach { id ->
+            val messages = chats.document(id).collection("messages").get().await()
+            val unread = messages.documents.filter { doc ->
+                val senderId = doc.getString("senderId").orEmpty()
+                val read = doc.getBoolean("read") ?: false
+                senderId.isNotEmpty() && senderId != currentUserId && !read
+            }
+            if (unread.isEmpty()) return@forEach
+            val batch = firestore.batch()
+            unread.forEach { doc -> batch.update(doc.reference, "read", true) }
+            batch.set(
+                chats.document(id),
+                mapOf("lastReadUpdate" to System.currentTimeMillis()),
+                SetOptions.merge(),
             )
-        ).await()
-    }
-
-    override suspend fun markAsRead(jobId: String, currentUserId: String): Result<Unit> = runCatching {
-        val chatId = jobId.trim()
-        val messages = chats.document(chatId)
-            .collection("messages")
-            .get()
-            .await()
-
-        val unreadMessages = messages.filter { doc ->
-            val senderId = doc.getString("senderId") ?: ""
-            val read = doc.getBoolean("read") ?: false
-            senderId != currentUserId && !read
+            runCatching { batch.commit().await() }
         }
 
-        if (unreadMessages.isEmpty()) return@runCatching
-
-        val batch = firestore.batch()
-        unreadMessages.forEach { doc ->
-            batch.update(doc.reference, "read", true)
+        if (!partnerId.isNullOrBlank()) {
+            firestore.collection("users").document(currentUserId)
+                .collection("chatPartners").document(partnerId)
+                .set(
+                    mapOf("lastReadAtMillis" to System.currentTimeMillis()),
+                    SetOptions.merge(),
+                ).await()
         }
-        
-        batch.set(chats.document(chatId), mapOf("lastReadUpdate" to System.currentTimeMillis()), SetOptions.merge())
-        batch.commit().await()
     }
 
     override fun observeChatSummaries(userId: String): Flow<List<ChatSummary>> = callbackFlow {
-        val subscription = chats.addSnapshotListener { snapshot, error ->
-            if (error != null) return@addSnapshotListener
-            
-            val docs = snapshot?.documents ?: emptyList()
-            if (docs.isEmpty()) {
-                trySend(emptyList())
-                return@addSnapshotListener
-            }
-
-            val summaries = mutableMapOf<String, ChatSummary>()
-            val targetDocs = docs.filter { it.id.contains(userId) }
-            
-            if (targetDocs.isEmpty()) {
-                trySend(emptyList())
-                return@addSnapshotListener
-            }
-
-            targetDocs.forEach { chatDoc ->
-                val chatId = chatDoc.id
-                val parts = chatId.split("_")
-                if (parts.size >= 3) {
-                    val otherId = if (parts[1] == userId) parts[2] else parts[1]
-                    
-                    // Real-time listener for the last message in THIS specific chat
-                    chatDoc.reference.collection("messages")
-                        .orderBy("timestampMillis", Query.Direction.DESCENDING)
-                        .limit(1)
-                        .addSnapshotListener { msgSnapshot, _ ->
-                            val lastMsgDoc = msgSnapshot?.documents?.firstOrNull()
-                            if (lastMsgDoc != null) {
-                                // Now fetch the user name (we can assume this is static for now)
-                                firestore.collection("users").document(otherId).get()
-                                    .addOnSuccessListener { userDoc ->
-                                        val otherName = userDoc.getString("name") ?: "MotoTap User"
-                                        val summary = ChatSummary(
-                                            jobId = chatId,
-                                            lastMessage = ChatMessage(
-                                                id = lastMsgDoc.id,
-                                                senderId = lastMsgDoc.getString("senderId") ?: "",
-                                                text = lastMsgDoc.getString("text") ?: "",
-                                                timestampMillis = lastMsgDoc.getLong("timestampMillis") ?: 0L,
-                                                read = lastMsgDoc.getBoolean("read") ?: false
-                                            ),
-                                            otherUserName = otherName
-                                        )
-                                        summaries[chatId] = summary
-                                        trySend(summaries.values.sortedByDescending { it.lastMessage.timestampMillis })
-                                    }
-                            }
-                        }
-                }
-            }
-        }
-        awaitClose { subscription.remove() }
-    }
-
-    override suspend fun setTypingStatus(jobId: String, userId: String, isTyping: Boolean): Result<Unit> = runCatching {
-        val parts = jobId.split("_")
-        if (parts.size < 3) return@runCatching
-
-        val otherId = if (parts[1] == userId) parts[2] else parts[1]
-        val roomIds = getAllConversationRoomIds(userId, otherId)
-
-        val batch = firestore.batch()
-
-        // 1. Update all room variants
-        roomIds.forEach { roomId ->
-            val roomRef = chats.document(roomId)
-            // Ensure document exists and update top-level fields
-            batch.set(
-                roomRef,
-                mapOf(
-                    "lastActiveMillis" to System.currentTimeMillis(),
-                    "lastActive" to System.currentTimeMillis(),
-                    "participants" to listOf(userId, otherId).sorted()
-                ),
-                SetOptions.merge()
-            )
-            // Update nested typing status
-            batch.update(roomRef, "typingStatus.$userId", isTyping)
-        }
-
-        // 2. Update partner's inbox doc
-        val partnerInboxRef = firestore.collection("users")
-            .document(otherId)
-            .collection("chatPartners")
-            .document(userId)
-
-        batch.set(
-            partnerInboxRef,
-            mapOf(
-                "partnerId" to userId,
-                "partnerIsTyping" to isTyping,
-                "partnerTypingAtMillis" to System.currentTimeMillis()
-            ),
-            SetOptions.merge()
-        )
-
-        batch.commit().await()
-    }
-
-    override fun observeTypingStatus(jobId: String, currentUserId: String): Flow<Boolean> = callbackFlow {
-        val parts = jobId.split("_")
-        if (parts.size < 3) {
-            trySend(false)
+        if (userId.isBlank()) {
+            trySend(emptyList())
             awaitClose { }
             return@callbackFlow
         }
 
-        val partnerId = if (parts[1] == currentUserId) parts[2] else parts[1]
-        val roomIds = getAllConversationRoomIds(currentUserId, partnerId)
+        val subscription = firestore.collection("users").document(userId)
+            .collection("chatPartners")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("FirestoreChatRepo", "chatPartners: ${error.message}")
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
 
+                val entries = snapshot?.documents.orEmpty()
+                if (entries.isEmpty()) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+
+                val byPartner = linkedMapOf<String, ChatSummary>()
+                entries.forEach { doc ->
+                    val partnerId = doc.getString("partnerId") ?: doc.id
+                    if (partnerId.isBlank()) return@forEach
+                    val roomId = doc.getString("roomId")
+                        ?.takeIf { it.isNotBlank() }
+                        ?: ChatIds.roomId(userId, partnerId)
+                    val text = doc.getString("lastMessageText").orEmpty()
+                    val senderId = doc.getString("lastMessageSenderId").orEmpty()
+                    val millis = doc.getLong("lastMessageMillis")
+                        ?: doc.getLong("updatedAtMillis")
+                        ?: 0L
+                    val lastRead = doc.getLong("lastReadAtMillis") ?: 0L
+                    val unread = senderId.isNotEmpty() &&
+                        senderId != userId &&
+                        millis > lastRead
+                    val name = doc.getString("partnerName")?.takeIf { it.isNotBlank() }
+                        ?: "MotoTap User"
+                    val role = (doc.getString("partnerRole") ?: doc.getString("role") ?: "")
+                        .trim()
+                        .lowercase()
+
+                    byPartner[partnerId] = ChatSummary(
+                        roomId = roomId,
+                        partnerId = partnerId,
+                        lastMessage = ChatMessage(
+                            id = "preview_$partnerId",
+                            senderId = senderId,
+                            text = text.ifBlank { "Tap to open conversation" },
+                            timestampMillis = millis,
+                            read = !unread,
+                        ),
+                        otherUserName = name,
+                        otherUserRole = role,
+                        unread = unread,
+                    )
+                }
+
+                trySend(
+                    byPartner.values.sortedByDescending { it.lastMessage.timestampMillis }
+                )
+            }
+
+        awaitClose { subscription.remove() }
+    }
+
+    override suspend fun setTypingStatus(
+        roomId: String,
+        userId: String,
+        isTyping: Boolean,
+    ): Result<Unit> = runCatching {
+        val participants = resolveParticipants(roomId, userId)
+        if (participants.size < 2) return@runCatching
+        val partnerId = participants.first { it != userId }
+        val roomIds = ChatIds.allRoomIds(participants[0], participants[1])
+        val now = System.currentTimeMillis()
+        val base = mapOf(
+            "lastActiveMillis" to now,
+            "lastActive" to now,
+            "participants" to participants.sorted(),
+        )
+
+        roomIds.forEach { id ->
+            val roomRef = chats.document(id)
+            roomRef.set(base, SetOptions.merge()).await()
+            roomRef.update("typingStatus.$userId", isTyping).await()
+        }
+
+        firestore.collection("users").document(partnerId)
+            .collection("chatPartners").document(userId)
+            .set(
+                mapOf(
+                    "partnerId" to userId,
+                    "partnerIsTyping" to isTyping,
+                    "partnerTypingAtMillis" to now,
+                ),
+                SetOptions.merge(),
+            ).await()
+    }
+
+    override fun observeTypingStatus(
+        roomId: String,
+        currentUserId: String,
+    ): Flow<Boolean> = callbackFlow {
+        val participants = resolveParticipants(roomId, currentUserId)
+        if (participants.size < 2) {
+            trySend(false)
+            awaitClose { }
+            return@callbackFlow
+        }
+        val partnerId = participants.first { it != currentUserId }
+        val roomIds = ChatIds.allRoomIds(participants[0], participants[1])
         val typingStatuses = mutableMapOf<String, Boolean>()
-        
-        val updateAndSend = { source: String, isTyping: Boolean ->
-            typingStatuses[source] = isTyping
+        val registrations = mutableListOf<ListenerRegistration>()
+
+        fun emit() {
             trySend(typingStatuses.values.any { it })
         }
 
-        val subscriptions = mutableListOf<com.google.firebase.firestore.ListenerRegistration>()
-
-        // 1. Listen to all room variants
-        roomIds.forEach { roomId ->
-            val sub = chats.document(roomId).addSnapshotListener { snapshot, _ ->
+        roomIds.forEach { id ->
+            registrations += chats.document(id).addSnapshotListener { snapshot, _ ->
                 val typingMap = snapshot?.get("typingStatus") as? Map<*, *>
-                // Treat these as typing: true, 1, or "true" (string)
                 val status = typingMap?.get(partnerId)
                 val isTyping = when (status) {
                     true -> true
@@ -231,36 +373,169 @@ class FirestoreChatRepository(
                     "true" -> true
                     else -> false
                 }
-                updateAndSend("room_$roomId", isTyping)
+                typingStatuses["room_$id"] = isTyping
+                emit()
             }
-            subscriptions.add(sub)
         }
 
-        // 2. Listen to partner inbox doc
-        val partnerInboxRef = firestore.collection("users")
-            .document(currentUserId)
-            .collection("chatPartners")
-            .document(partnerId)
+        registrations += firestore.collection("users").document(currentUserId)
+            .collection("chatPartners").document(partnerId)
+            .addSnapshotListener { snapshot, _ ->
+                val partnerIsTyping = snapshot?.getBoolean("partnerIsTyping") ?: false
+                val at = snapshot?.getLong("partnerTypingAtMillis") ?: 0L
+                val fresh = System.currentTimeMillis() - at < 10_000
+                typingStatuses["inbox"] = partnerIsTyping && fresh
+                emit()
+            }
 
-        val inboxSub = partnerInboxRef.addSnapshotListener { snapshot, _ ->
-            val partnerIsTyping = snapshot?.getBoolean("partnerIsTyping") ?: false
-            val partnerTypingAtMillis = snapshot?.getLong("partnerTypingAtMillis") ?: 0L
-            
-            val isFresh = System.currentTimeMillis() - partnerTypingAtMillis < 10_000
-            updateAndSend("inbox", partnerIsTyping && isFresh)
+        awaitClose { registrations.forEach { it.remove() } }
+    }
+
+    override suspend fun deleteConversation(userId: String, partnerId: String): Result<Unit> =
+        runCatching {
+            require(userId.isNotBlank() && partnerId.isNotBlank()) {
+                "Missing conversation reference."
+            }
+            firestore.collection("users").document(userId)
+                .collection("chatPartners").document(partnerId)
+                .delete()
+                .await()
         }
-        subscriptions.add(inboxSub)
 
-        awaitClose { 
-            subscriptions.forEach { it.remove() }
+    override suspend fun ensureConversation(
+        userId: String,
+        partnerId: String,
+        participantNames: Map<String, String>,
+    ): Result<String> = runCatching {
+        require(userId.isNotBlank() && partnerId.isNotBlank()) { "Invalid participants." }
+        val roomIds = ChatIds.allRoomIds(userId, partnerId)
+        val canonical = ChatIds.roomId(userId, partnerId)
+        val now = System.currentTimeMillis()
+        val sorted = listOf(userId, partnerId).sorted()
+        val names = participantNames.filterValues { it.isNotBlank() }
+
+        roomIds.forEach { id ->
+            chats.document(id).set(
+                mapOf(
+                    "participants" to sorted,
+                    "participantNames" to names,
+                    "lastActiveMillis" to now,
+                    "lastActive" to now,
+                ),
+                SetOptions.merge(),
+            ).await()
+        }
+
+        syncChatPartnerEntries(
+            participants = sorted,
+            participantNames = names.ifEmpty {
+                mapOf(
+                    userId to resolveDisplayName(userId),
+                    partnerId to resolveDisplayName(partnerId),
+                )
+            },
+            preview = "",
+            millis = now,
+            senderId = "",
+            roomId = canonical,
+        )
+        canonical
+    }
+
+    private suspend fun syncChatPartnerEntries(
+        participants: List<String>,
+        participantNames: Map<String, String>,
+        preview: String,
+        millis: Long,
+        senderId: String,
+        roomId: String,
+    ) {
+        if (participants.size < 2) return
+        val userA = participants[0]
+        val userB = participants[1]
+        val pairs = listOf(userA to userB, userB to userA)
+        pairs.forEach { (ownerId, partnerId) ->
+            val payload = mutableMapOf<String, Any>(
+                "partnerId" to partnerId,
+                "partnerName" to (participantNames[partnerId] ?: "User"),
+                "partnerRole" to resolveRole(partnerId),
+                "participantIds" to participants.sorted(),
+                "roomId" to roomId,
+                "updatedAtMillis" to millis,
+            )
+            preview.trim().takeIf { it.isNotEmpty() }?.let {
+                payload["lastMessageText"] = it
+                payload["lastMessageSenderId"] = senderId
+                payload["lastMessageMillis"] = millis
+            }
+            firestore.collection("users").document(ownerId)
+                .collection("chatPartners").document(partnerId)
+                .set(payload, SetOptions.merge())
+                .await()
         }
     }
 
-    private fun getAllConversationRoomIds(userIdA: String, userIdB: String): List<String> {
-        val sorted = listOf(userIdA, userIdB).sorted()
-        val canonical = "chat_${sorted[0]}_${sorted[1]}"
-        val forward = "chat_${userIdA}_${userIdB}"
-        val reverse = "chat_${userIdB}_${userIdA}"
-        return listOf(canonical, forward, reverse).distinct()
+    private fun resolveParticipants(roomId: String, knownUserId: String = ""): List<String> {
+        val partner = ChatIds.partnerIdFromRoomId(roomId, knownUserId)
+        return when {
+            knownUserId.isNotBlank() && !partner.isNullOrBlank() ->
+                listOf(knownUserId, partner)
+            else -> {
+                val parts = roomId.trim().split("_")
+                if (parts.size >= 3 && parts[0] == "chat") listOf(parts[1], parts[2])
+                else emptyList()
+            }
+        }
+    }
+
+    private suspend fun resolveDisplayName(userId: String): String {
+        if (userId.isBlank()) return "User"
+        runCatching {
+            val public = firestore.collection("publicProfiles").document(userId).get().await()
+            public.getString("name")?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        runCatching {
+            val user = firestore.collection("users").document(userId).get().await()
+            user.getString("name")?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        return "MotoTap User"
+    }
+
+    private suspend fun resolveRole(userId: String): String {
+        if (userId.isBlank()) return "driver"
+        runCatching {
+            val public = firestore.collection("publicProfiles").document(userId).get().await()
+            public.getString("role")?.takeIf { it.isNotBlank() }?.let { return it.lowercase() }
+        }
+        runCatching {
+            val user = firestore.collection("users").document(userId).get().await()
+            user.getString("role")?.takeIf { it.isNotBlank() }?.let { return it.lowercase() }
+        }
+        return "driver"
+    }
+
+    private fun DocumentSnapshot.toChatMessageOrNull(source: String): ChatMessage? {
+        val senderId = getString("senderId") ?: return null
+        return ChatMessage(
+            id = if (source == "legacy") "legacy_$id" else id,
+            senderId = senderId,
+            text = getString("text") ?: "",
+            timestampMillis = getLong("timestampMillis") ?: 0L,
+            read = getBoolean("read") ?: false,
+        )
+    }
+
+    private fun dedupeMessages(messages: List<ChatMessage>): List<ChatMessage> {
+        val byKey = linkedMapOf<String, ChatMessage>()
+        messages.forEach { message ->
+            val key = "${message.senderId}|${message.text}|${message.timestampMillis}"
+            val existing = byKey[key]
+            if (existing == null) {
+                byKey[key] = message
+            } else if (existing.id.startsWith("legacy_") && !message.id.startsWith("legacy_")) {
+                byKey[key] = message
+            }
+        }
+        return byKey.values.toList()
     }
 }

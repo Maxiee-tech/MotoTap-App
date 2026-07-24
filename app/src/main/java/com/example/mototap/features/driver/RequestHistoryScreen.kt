@@ -6,10 +6,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -21,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mototap.core.model.JobRequest
+import com.example.mototap.core.model.JobStatus
 import com.example.mototap.ui.theme.MotoRed
 import java.text.SimpleDateFormat
 import java.util.*
@@ -33,19 +31,21 @@ fun RequestHistoryScreen(
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    
-    // Sort jobs by date descending (most recent at top)
-    val sortedJobs = uiState.jobs.sortedByDescending { it.createdAtMillis }
+
+    // Match website driver REQUESTS: real bookings only (no chat-inquiry stubs).
+    val sortedJobs = uiState.jobs
+        .filter { !it.issueType.equals("Inquiry", ignoreCase = true) }
+        .sortedByDescending { it.createdAtMillis }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = "REQUEST HISTORY",
+                        text = "REQUESTS",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
+                        letterSpacing = 1.sp,
                     )
                 },
                 navigationIcon = {
@@ -53,23 +53,30 @@ fun RequestHistoryScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color.White
+                            tint = Color.White,
                         )
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MotoRed
-                )
+                    containerColor = MotoRed,
+                ),
             )
         },
-        containerColor = Color.Black
+        containerColor = Color.Black,
     ) { paddingValues ->
         if (sortedJobs.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxSize().padding(paddingValues),
-                contentAlignment = Alignment.Center
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Text("No previous requests found", color = Color.Gray)
+                Text(
+                    text = "No past requests yet. Your submitted requests will show here.",
+                    color = Color.Gray,
+                    fontSize = 14.sp,
+                )
             }
         } else {
             LazyColumn(
@@ -77,12 +84,12 @@ fun RequestHistoryScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
                     .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                items(sortedJobs) { job ->
-                    HistoryItem(
+                items(sortedJobs, key = { it.id }) { job ->
+                    DriverRequestCard(
                         job = job,
-                        onDelete = { viewModel.deleteRequest(job.id) }
+                        onDelete = { viewModel.deleteRequest(job.id) },
                     )
                 }
             }
@@ -91,76 +98,65 @@ fun RequestHistoryScreen(
 }
 
 @Composable
-fun HistoryItem(job: JobRequest, onDelete: () -> Unit) {
+private fun DriverRequestCard(job: JobRequest, onDelete: () -> Unit) {
     val sdf = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
     val dateString = sdf.format(Date(job.createdAtMillis))
+    val title = jobTitle(job)
+    val vehicleBits = listOf(job.vehicleMake, job.vehicleModel).filter { it.isNotBlank() }
+    val vehicleSuffix = if (vehicleBits.isNotEmpty()) " (${vehicleBits.joinToString(" ")})" else ""
+    val canDelete = job.status == JobStatus.REQUESTED ||
+        job.status == JobStatus.MATCHING ||
+        job.status == JobStatus.CLOSED
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
         shape = RoundedCornerShape(8.dp),
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.DarkGray)
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.DarkGray),
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.Build, contentDescription = null, tint = MotoRed, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = job.issueType,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        )
-                    }
-                    
-                    StatusBadge(status = job.status.name)
-                }
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = job.locationLabel, color = Color.LightGray, fontSize = 14.sp)
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.DateRange, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = dateString, color = Color.Gray, fontSize = 12.sp)
-                }
-                
-                if (job.price > 0) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "KES ${job.price}",
-                        color = MotoRed,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                }
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = title,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                StatusBadge(status = job.status.name)
             }
 
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = Color.Gray,
-                    modifier = Modifier.size(20.dp)
-                )
+            Spacer(modifier = Modifier.height(10.dp))
+            MetaLine("Status: ${formatJobStatus(job.status)}")
+            MetaLine("Submitted: $dateString")
+            MetaLine("Location: ${job.locationLabel.ifBlank { "Not provided" }}")
+            MetaLine("Details: ${job.description.ifBlank { "No additional details" }}")
+            Text(
+                text = "Offered Price$vehicleSuffix: KSh ${job.price}",
+                color = MotoRed,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+
+            if (canDelete) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
             }
         }
     }
@@ -170,22 +166,54 @@ fun HistoryItem(job: JobRequest, onDelete: () -> Unit) {
 fun StatusBadge(status: String) {
     Surface(
         color = when (status) {
-            "COMPLETED" -> Color(0xFF4CAF50).copy(alpha = 0.2f)
-            "REQUESTED" -> Color(0xFF2196F3).copy(alpha = 0.2f)
+            "COMPLETED", "PAID" -> Color(0xFF4CAF50).copy(alpha = 0.2f)
+            "IN_PROGRESS" -> MotoRed.copy(alpha = 0.2f)
+            "REQUESTED", "MATCHING" -> Color(0xFF2196F3).copy(alpha = 0.2f)
             else -> Color.Gray.copy(alpha = 0.2f)
         },
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
     ) {
         Text(
             text = status,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             color = when (status) {
-                "COMPLETED" -> Color(0xFF4CAF50)
-                "REQUESTED" -> Color(0xFF2196F3)
+                "COMPLETED", "PAID" -> Color(0xFF4CAF50)
+                "IN_PROGRESS" -> MotoRed
+                "REQUESTED", "MATCHING" -> Color(0xFF2196F3)
                 else -> Color.White
             },
             fontSize = 10.sp,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
         )
     }
+}
+
+@Composable
+private fun MetaLine(text: String) {
+    Text(
+        text = text,
+        color = Color.LightGray,
+        fontSize = 13.sp,
+        modifier = Modifier.padding(bottom = 4.dp),
+    )
+}
+
+internal fun jobTitle(job: JobRequest): String {
+    val issue = job.issueType.ifBlank { job.serviceName }.ifBlank { "Service" }
+    return if (job.serviceCategory.isNotBlank()) {
+        "$issue - ${job.serviceCategory}"
+    } else {
+        issue
+    }
+}
+
+internal fun formatJobStatus(status: JobStatus): String = when (status) {
+    JobStatus.REQUESTED -> "Requested"
+    JobStatus.MATCHING -> "Matching"
+    JobStatus.ASSIGNED -> "Assigned"
+    JobStatus.IN_PROGRESS -> "In progress"
+    JobStatus.COMPLETED -> "Completed"
+    JobStatus.PAID -> "Paid"
+    JobStatus.CLOSED -> "Closed"
+    JobStatus.INQUIRY -> "Inquiry"
 }

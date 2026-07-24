@@ -19,6 +19,7 @@ import com.example.mototap.features.driver.*
 import com.example.mototap.features.mechanic.*
 import com.example.mototap.features.partsdealer.PartsDealerHomeScreen
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.launch
 
 private fun androidx.navigation.NavHostController.navigateAfterAuth(role: String?, popUpRoute: String) {
     when (role?.lowercase()?.trim()) {
@@ -78,7 +79,7 @@ fun MotoTapNavHost(
         factory = object : androidx.lifecycle.ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                return DriverHomeViewModel(authRepository, jobRepository) as T
+                return DriverHomeViewModel(authRepository, jobRepository, chatRepository) as T
             }
         }
     )
@@ -384,9 +385,24 @@ fun MotoTapNavHost(
             }
             
             if (userProfile?.role?.name?.lowercase() == "mechanic") {
+                val scope = androidx.compose.runtime.rememberCoroutineScope()
                 MechanicHistoryScreen(
                     viewModel = mechanicViewModel,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onMessageDriver = { driverId, driverName ->
+                        val me = FirebaseAuth.getInstance().currentUser?.uid
+                        if (!me.isNullOrBlank()) {
+                            scope.launch {
+                                chatRepository.ensureConversation(
+                                    me,
+                                    driverId,
+                                    mapOf(driverId to driverName),
+                                )
+                                val roomId = com.example.mototap.core.util.ChatIds.roomId(me, driverId)
+                                navController.navigate(AppRoute.Chat.createRoute(roomId))
+                            }
+                        }
+                    },
                 )
             } else {
                 RequestHistoryScreen(

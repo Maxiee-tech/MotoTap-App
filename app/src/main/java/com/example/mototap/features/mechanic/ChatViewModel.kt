@@ -37,6 +37,25 @@ class ChatViewModel(
         observeMessages()
         observeTypingStatus()
         fetchParticipantName()
+        ensureRoom()
+    }
+
+    private fun ensureRoom() {
+        viewModelScope.launch {
+            val parts = jobId.split("_")
+            if (parts.size < 3) return@launch
+            val otherId = if (parts[1] == currentUserId) parts[2] else parts[1]
+            val myProfile = authRepository.getUserProfile(currentUserId)
+            val otherProfile = authRepository.getUserProfile(otherId)
+            chatRepository.ensureConversation(
+                currentUserId,
+                otherId,
+                buildMap {
+                    myProfile?.name?.takeIf { it.isNotBlank() }?.let { put(currentUserId, it) }
+                    otherProfile?.name?.takeIf { it.isNotBlank() }?.let { put(otherId, it) }
+                },
+            )
+        }
     }
 
     private fun fetchParticipantName() {
@@ -55,7 +74,7 @@ class ChatViewModel(
 
     private fun observeMessages() {
         viewModelScope.launch {
-            chatRepository.observeMessages(jobId).collect { messages ->
+            chatRepository.observeMessages(jobId, currentUserId).collect { messages ->
                 _uiState.value = _uiState.value.copy(messages = messages)
                 
                 val unreadCount = messages.count { !it.read && it.senderId != currentUserId }
@@ -127,7 +146,21 @@ class ChatViewModel(
         _uiState.value = _uiState.value.copy(messages = currentList)
         
         viewModelScope.launch {
-            val result = chatRepository.sendMessage(jobId, currentUserId, text)
+            val myName = authRepository.getUserProfile(currentUserId)?.name
+            val parts = jobId.split("_")
+            val otherId = if (parts.size >= 3) {
+                if (parts[1] == currentUserId) parts[2] else parts[1]
+            } else {
+                null
+            }
+            val otherName = otherId?.let { authRepository.getUserProfile(it)?.name }
+            val result = chatRepository.sendMessage(
+                jobId,
+                currentUserId,
+                text,
+                senderName = myName,
+                recipientName = otherName,
+            )
             if (result.isFailure) {
                 // If it really failed, we can show an error or remove the message
                 _uiState.value = _uiState.value.copy(error = "Failed to send message")

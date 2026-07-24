@@ -4,16 +4,46 @@ import com.example.mototap.core.model.ChatMessage
 import kotlinx.coroutines.flow.Flow
 
 data class ChatSummary(
-    val jobId: String,
+    val roomId: String,
+    val partnerId: String,
     val lastMessage: ChatMessage,
-    val otherUserName: String
-)
+    val otherUserName: String,
+    val otherUserRole: String = "",
+    val unread: Boolean = false,
+) {
+    /** Legacy alias used by older call sites / navigation. */
+    val jobId: String get() = roomId
+}
 
 interface ChatRepository {
-    fun observeMessages(jobId: String): Flow<List<ChatMessage>>
-    suspend fun sendMessage(jobId: String, senderId: String, text: String): Result<Unit>
-    suspend fun markAsRead(jobId: String, currentUserId: String): Result<Unit>
+    fun observeMessages(roomId: String, currentUserId: String = ""): Flow<List<ChatMessage>>
+
+    suspend fun sendMessage(
+        roomId: String,
+        senderId: String,
+        text: String,
+        senderName: String? = null,
+        recipientName: String? = null,
+    ): Result<Unit>
+
+    suspend fun markAsRead(roomId: String, currentUserId: String): Result<Unit>
+
     fun observeChatSummaries(userId: String): Flow<List<ChatSummary>>
-    suspend fun setTypingStatus(jobId: String, userId: String, isTyping: Boolean): Result<Unit>
-    fun observeTypingStatus(jobId: String, currentUserId: String): Flow<Boolean>
+
+    suspend fun setTypingStatus(roomId: String, userId: String, isTyping: Boolean): Result<Unit>
+
+    fun observeTypingStatus(roomId: String, currentUserId: String): Flow<Boolean>
+
+    /** Removes only this user's inbox row (`chatPartners`); shared messages stay. */
+    suspend fun deleteConversation(userId: String, partnerId: String): Result<Unit>
+
+    /**
+     * Ensures chat room docs + mutual `chatPartners` rows exist (website open-chat path).
+     * Returns the canonical sorted room id.
+     */
+    suspend fun ensureConversation(
+        userId: String,
+        partnerId: String,
+        participantNames: Map<String, String> = emptyMap(),
+    ): Result<String>
 }

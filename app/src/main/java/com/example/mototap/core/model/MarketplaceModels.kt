@@ -121,6 +121,9 @@ data class JobRequest(
     val vehicleMake: String = "",
     val vehicleModel: String = "",
     val serviceName: String = "",
+    val serviceCategory: String = "",
+    val driverName: String = "",
+    val driverPhotoUrl: String = "",
 )
 
 data class ChatMessage(

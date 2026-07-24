@@ -65,8 +65,6 @@ fun ChatScreen(
                         )
                         if (uiState.isOtherTyping) {
                             Text("typing...", color = Color.Green, fontSize = 10.sp)
-                        } else {
-                            Text("Online", color = Color.Green, fontSize = 10.sp)
                         }
                     }
                 },

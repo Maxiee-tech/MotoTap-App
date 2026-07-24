@@ -11,7 +11,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.mototap.core.model.JobRequest
 import com.example.mototap.core.model.UserProfile
 import com.example.mototap.core.repository.AuthRepository
+import com.example.mototap.core.repository.ChatRepository
 import com.example.mototap.core.repository.JobRepository
+import com.example.mototap.core.util.ChatIds
 import com.example.mototap.core.util.estimateTowingTotal
 import com.example.mototap.core.util.formatKsh
 import com.example.mototap.core.util.getMechanicServicePrice
@@ -53,6 +55,7 @@ data class DriverUiState(
 class DriverHomeViewModel(
     private val authRepository: AuthRepository,
     private val jobRepository: JobRepository,
+    private val chatRepository: ChatRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DriverUiState())
@@ -230,9 +233,8 @@ class DriverHomeViewModel(
                     description = "Towing ~$km km @ KSh ${formatKsh(rateOrPrice)}/km"
                 }
 
-                // Reuse the same room ID if an inquiry already exists!
-                // This ensures the chat history moves from Inquiry to Booking.
-                val inquiryId = "chat_${userId}_${mechanic.id}"
+                // Canonical sorted room id (same as website) so chat history stays shared.
+                val inquiryId = ChatIds.roomId(userId, mechanic.id)
                 val result = jobRepository.createJob(
                     driverId = userId, 
                     issueType = serviceName, 
@@ -267,31 +269,16 @@ class DriverHomeViewModel(
     fun openChatWithMechanic(mechanicId: String, onJobIdFound: (String) -> Unit) {
         val userId = _uiState.value.currentUserId ?: return
         viewModelScope.launch {
-            // Check if we already have an active job or inquiry with this mechanic
-            // to ensure we always use the SAME room and see history.
-            val existingJob = _uiState.value.jobs.find { 
-                it.mechanicId == mechanicId && it.status != com.example.mototap.core.model.JobStatus.CLOSED 
+            val roomId = ChatIds.roomId(userId, mechanicId)
+            val myProfile = authRepository.getUserProfile(userId)
+            val partnerProfile = authRepository.getUserProfile(mechanicId)
+            val names = buildMap {
+                myProfile?.name?.takeIf { it.isNotBlank() }?.let { put(userId, it) }
+                partnerProfile?.name?.takeIf { it.isNotBlank() }?.let { put(mechanicId, it) }
             }
-            
-            if (existingJob != null) {
-                Log.d("DriverVM", "Found existing room: ${existingJob.id}")
-                onJobIdFound(existingJob.id)
-            } else {
-                val inquiryId = "chat_${userId}_${mechanicId}"
-                Log.d("DriverVM", "Creating/Reopening inquiry room: $inquiryId")
-                
-                // Create the parent document if it doesn't exist
-                jobRepository.createJob(
-                    driverId = userId, 
-                    issueType = "Inquiry", 
-                    description = "Conversation history",
-                    locationLabel = "Chat", 
-                    suggestedPrice = 0, 
-                    mechanicId = mechanicId,
-                    jobId = inquiryId
-                )
-                onJobIdFound(inquiryId)
-            }
+            chatRepository.ensureConversation(userId, mechanicId, names)
+            Log.d("DriverVM", "Opening chat room: $roomId")
+            onJobIdFound(roomId)
         }
     }
 }
@@ -299,7 +286,9 @@ class DriverHomeViewModel(
 class DriverHomeViewModelFactory(
     private val authRepository: AuthRepository,
     private val jobRepository: JobRepository,
+    private val chatRepository: ChatRepository,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T = DriverHomeViewModel(authRepository, jobRepository) as T
+    override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        DriverHomeViewModel(authRepository, jobRepository, chatRepository) as T
 }
