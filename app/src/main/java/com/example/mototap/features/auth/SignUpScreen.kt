@@ -246,6 +246,11 @@ fun BasicInfoStep(viewModel: AuthViewModel, onNavigateToLogin: () -> Unit) {
             modifier = Modifier.align(Alignment.Start)
         )
 
+        val garageMode by viewModel.garageMode.collectAsState()
+        val garageInviteCode by viewModel.garageInviteCode.collectAsState()
+        val inviteVerified by viewModel.inviteVerified.collectAsState()
+        val verifiedGarageName by viewModel.verifiedGarageName.collectAsState()
+
         FlowRow(
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -254,13 +259,21 @@ fun BasicInfoStep(viewModel: AuthViewModel, onNavigateToLogin: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 RadioButton(
                     selected = role == "driver",
-                    onClick = { viewModel.role.value = "driver" },
+                    onClick = {
+                        viewModel.role.value = "driver"
+                        viewModel.garageMode.value = "own"
+                        viewModel.clearVerifiedInvite()
+                    },
                     colors = RadioButtonDefaults.colors(selectedColor = MotoRed, unselectedColor = Color.Gray)
                 )
                 Text(
                     text = "Driver",
                     color = Color.White,
-                    modifier = Modifier.clickable { viewModel.role.value = "driver" }
+                    modifier = Modifier.clickable {
+                        viewModel.role.value = "driver"
+                        viewModel.garageMode.value = "own"
+                        viewModel.clearVerifiedInvite()
+                    }
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -278,25 +291,112 @@ fun BasicInfoStep(viewModel: AuthViewModel, onNavigateToLogin: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 RadioButton(
                     selected = role == "parts_dealer",
-                    onClick = { viewModel.role.value = "parts_dealer" },
+                    onClick = {
+                        viewModel.role.value = "parts_dealer"
+                        viewModel.garageMode.value = "own"
+                        viewModel.clearVerifiedInvite()
+                    },
                     colors = RadioButtonDefaults.colors(selectedColor = MotoRed, unselectedColor = Color.Gray)
                 )
                 Text(
                     text = "Parts Dealer",
                     color = Color.White,
-                    modifier = Modifier.clickable { viewModel.role.value = "parts_dealer" }
+                    modifier = Modifier.clickable {
+                        viewModel.role.value = "parts_dealer"
+                        viewModel.garageMode.value = "own"
+                        viewModel.clearVerifiedInvite()
+                    }
                 )
             }
         }
 
+        if (role == "mechanic") {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("How are you joining MotoTap?", color = Color.White, modifier = Modifier.align(Alignment.Start))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                RadioButton(
+                    selected = garageMode != "join",
+                    onClick = {
+                        viewModel.garageMode.value = "own"
+                        viewModel.clearVerifiedInvite()
+                    },
+                    colors = RadioButtonDefaults.colors(selectedColor = MotoRed, unselectedColor = Color.Gray)
+                )
+                Text(
+                    "I own / manage this garage",
+                    color = Color.White,
+                    modifier = Modifier.clickable {
+                        viewModel.garageMode.value = "own"
+                        viewModel.clearVerifiedInvite()
+                    }
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                RadioButton(
+                    selected = garageMode == "join",
+                    onClick = { viewModel.garageMode.value = "join" },
+                    colors = RadioButtonDefaults.colors(selectedColor = MotoRed, unselectedColor = Color.Gray)
+                )
+                Text(
+                    "I'm joining an existing garage",
+                    color = Color.White,
+                    modifier = Modifier.clickable { viewModel.garageMode.value = "join" }
+                )
+            }
+            if (garageMode == "join") {
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = garageInviteCode,
+                    onValueChange = {
+                        viewModel.garageInviteCode.value = it
+                        viewModel.clearVerifiedInvite()
+                    },
+                    label = { Text("Garage invite code", color = Color.Gray) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = MotoRed,
+                        unfocusedBorderColor = Color.Gray
+                    )
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Your invite code will be verified when you continue.",
+                    color = Color.Gray,
+                    fontSize = 12.sp,
+                    modifier = Modifier.align(Alignment.Start)
+                )
+                if (inviteVerified && verifiedGarageName.isNotBlank()) {
+                    Text(
+                        text = "Verified: $verifiedGarageName",
+                        color = Color(0xFF7DDEA5),
+                        modifier = Modifier.padding(top = 8.dp).align(Alignment.Start)
+                    )
+                }
+            }
+        }
+
         Button(
-            onClick = { viewModel.signUp() },
+            onClick = {
+                if (role == "mechanic" && garageMode == "join") {
+                    val code = garageInviteCode.trim().uppercase().filter { it.isLetterOrDigit() }
+                    if (code.length < 4) {
+                        // keep on this step; validation surfaces via enabled state
+                        return@Button
+                    }
+                }
+                viewModel.signUp()
+            },
             enabled = uiState !is AuthUiState.Loading &&
                     viewModel.isNameValid(name) &&
                     email.isNotBlank() &&
                     password.isNotBlank() &&
                     phoneNumber.isNotBlank() &&
-                    role.isNotBlank(),
+                    role.isNotBlank() &&
+                    (role != "mechanic" || garageMode != "join" ||
+                        garageInviteCode.trim().uppercase().filter { it.isLetterOrDigit() }.length >= 4),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 32.dp)
@@ -341,10 +441,13 @@ fun BasicInfoStep(viewModel: AuthViewModel, onNavigateToLogin: () -> Unit) {
 @Composable
 fun IdentityVerificationStep(viewModel: AuthViewModel, context: android.content.Context) {
     val role by viewModel.role.collectAsState()
+    val garageMode by viewModel.garageMode.collectAsState()
+    val verifiedGarageName by viewModel.verifiedGarageName.collectAsState()
     val idNumber by viewModel.idNumber.collectAsState()
     val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsState()
     val idPhotoUrl by viewModel.idPhotoUrl.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
+    val joinMode = role == "mechanic" && garageMode.trim() == "join"
 
     val profileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let { viewModel.uploadImage(context, it, "profile") }
@@ -380,36 +483,53 @@ fun IdentityVerificationStep(viewModel: AuthViewModel, context: android.content.
             }
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        val idLabel = when (role) {
-            "driver" -> "Driving License"
-            "parts_dealer" -> "Business License"
-            else -> "Mechanic Certification"
+        if (joinMode && verifiedGarageName.isNotBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Joining $verifiedGarageName. Business documents are already on file for this garage.",
+                color = Color.Gray,
+                fontSize = 13.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
-        OutlinedTextField(
-            value = idNumber,
-            onValueChange = { viewModel.idNumber.value = it },
-            label = { Text("$idLabel Number", color = Color.Gray) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedBorderColor = MotoRed,
-                unfocusedBorderColor = Color.Gray
+        if (!joinMode) {
+            Spacer(modifier = Modifier.height(24.dp))
+
+            val idLabel = when (role) {
+                "driver" -> "Driving License"
+                "parts_dealer" -> "Business License"
+                else -> "Certificate of Corporation"
+            }
+            val idPhotoLabel = when (role) {
+                "driver" -> "Front Photo of Driving License"
+                "parts_dealer" -> "Front Photo of Business License"
+                else -> "Certificate of Corporation"
+            }
+
+            OutlinedTextField(
+                value = idNumber,
+                onValueChange = { viewModel.idNumber.value = it },
+                label = { Text("$idLabel Number", color = Color.Gray) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = MotoRed,
+                    unfocusedBorderColor = Color.Gray
+                )
             )
-        )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        VerificationItem(
-            label = "Front Photo of $idLabel",
-            description = "Choose a photo or PDF from your device",
-            previewUrl = idPhotoUrl,
-            onPickImage = { idLauncher.launch(arrayOf("image/*", "application/pdf")) }
-        )
+            VerificationItem(
+                label = idPhotoLabel,
+                description = "Choose a photo or PDF from your device",
+                previewUrl = idPhotoUrl,
+                onPickImage = { idLauncher.launch(arrayOf("image/*", "application/pdf")) }
+            )
+        }
 
         Spacer(modifier = Modifier.height(32.dp))
 
@@ -417,8 +537,7 @@ fun IdentityVerificationStep(viewModel: AuthViewModel, context: android.content.
             onClick = { viewModel.saveIdentityStep { viewModel.nextStep() } },
             enabled = uiState !is AuthUiState.Loading &&
                     profilePhotoUrl.isNotBlank() &&
-                    idPhotoUrl.isNotBlank() &&
-                    idNumber.isNotBlank(),
+                    (joinMode || (idPhotoUrl.isNotBlank() && idNumber.isNotBlank())),
             modifier = Modifier.fillMaxWidth().height(56.dp),
             colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
             shape = MaterialTheme.shapes.extraSmall
@@ -804,62 +923,18 @@ fun MechanicAdditionalInfo(viewModel: AuthViewModel, context: android.content.Co
         )
     }
 
-    Text(
-        text = "How are you joining MotoTap?",
-        color = Color.White,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.fillMaxWidth()
-    )
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(
-            selected = !joinMode,
-            onClick = { viewModel.garageMode.value = "own" },
-            colors = RadioButtonDefaults.colors(selectedColor = MotoRed, unselectedColor = Color.Gray)
-        )
-        Text(
-            text = "I own / manage this garage",
-            color = Color.White,
-            fontSize = 14.sp,
-            modifier = Modifier.clickable { viewModel.garageMode.value = "own" }
-        )
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(
-            selected = joinMode,
-            onClick = { viewModel.garageMode.value = "join" },
-            colors = RadioButtonDefaults.colors(selectedColor = MotoRed, unselectedColor = Color.Gray)
-        )
-        Text(
-            text = "I'm joining an existing garage",
-            color = Color.White,
-            fontSize = 14.sp,
-            modifier = Modifier.clickable { viewModel.garageMode.value = "join" }
-        )
-    }
+    val verifiedGarageName by viewModel.verifiedGarageName.collectAsState()
 
     if (joinMode) {
-        OutlinedTextField(
-            value = garageInviteCode,
-            onValueChange = { viewModel.garageInviteCode.value = it.uppercase() },
-            label = { Text("Garage Invite Code", color = Color.Gray) },
-            placeholder = { Text("e.g. MT7K2Q", color = Color.Gray) },
-            singleLine = true,
-            supportingText = {
-                Text("Ask your garage owner for the code from their dashboard.", color = Color.Gray, fontSize = 12.sp)
+        Text(
+            text = if (verifiedGarageName.isNotBlank()) {
+                "Joining $verifiedGarageName. The owner will approve your request."
+            } else {
+                "Joining an existing garage. The owner will approve your request."
             },
-            modifier = Modifier.fillMaxWidth(),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedBorderColor = MotoRed,
-                unfocusedBorderColor = Color.Gray
-            )
+            color = Color.Gray,
+            fontSize = 13.sp,
+            modifier = Modifier.fillMaxWidth()
         )
         Spacer(modifier = Modifier.height(16.dp))
     } else {
@@ -871,16 +946,15 @@ fun MechanicAdditionalInfo(viewModel: AuthViewModel, context: android.content.Co
             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
         )
         Spacer(modifier = Modifier.height(16.dp))
-    }
 
-    VerificationItem(
-        label = "Front Photo of Mechanic Certification",
-        description = "Choose a photo or PDF from your device",
-        previewUrl = certificatePhotoUrl,
-        onPickImage = { certLauncher.launch(arrayOf("image/*", "application/pdf")) }
-    )
-    
-    Spacer(modifier = Modifier.height(16.dp))
+        VerificationItem(
+            label = "Front Photo of Mechanic Certification",
+            description = "Choose a photo or PDF from your device",
+            previewUrl = certificatePhotoUrl,
+            onPickImage = { certLauncher.launch(arrayOf("image/*", "application/pdf")) }
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+    }
 
     Text("Experience", color = Color.White)
     val experienceOptions = listOf(

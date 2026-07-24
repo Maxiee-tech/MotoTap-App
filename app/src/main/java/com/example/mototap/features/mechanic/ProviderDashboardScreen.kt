@@ -577,9 +577,29 @@ fun ProviderDashboardScreen(
                                     onRegenerate = { viewModel.regenerateInviteCode() },
                                 )
                             }
+
+                            if (uiState.pendingJoinRequests.isNotEmpty()) {
+                                item {
+                                    GaragePendingJoinsCard(
+                                        pending = uiState.pendingJoinRequests,
+                                        onApprove = { viewModel.approveJoinRequest(it) },
+                                        onReject = { viewModel.rejectJoinRequest(it) },
+                                    )
+                                }
+                            }
                         }
 
-                        if (uiState.isGarageMember) {
+                        if (uiState.isGarageMember && uiState.garageMemberStatus == "pending") {
+                            item {
+                                Text(
+                                    text = "Waiting for the garage owner to approve your join request.",
+                                    color = Color.Gray,
+                                    fontSize = 13.sp,
+                                )
+                            }
+                        }
+
+                        if (uiState.isGarageMember && uiState.garageMemberStatus != "pending") {
                             item(key = "garage_jobs_header") {
                                 val borderColor by animateColorAsState(
                                     targetValue = if (highlightGarageJobs) MotoRed else Color.Transparent,
@@ -1094,6 +1114,49 @@ fun VehicleRatesEditor(
             border = BorderStroke(1.dp, MotoRed),
         ) {
             Text("+ Add vehicle price", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun GaragePendingJoinsCard(
+    pending: List<com.example.mototap.core.model.GarageMember>,
+    onApprove: (String) -> Unit,
+    onReject: (String) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "JOIN REQUESTS",
+                color = MotoRed,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            pending.forEach { member ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = member.displayName.ifBlank { "Mechanic" },
+                        color = Color.White,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { onApprove(member.uid) }) {
+                        Text("APPROVE", color = Color(0xFF7DDEA5), fontWeight = FontWeight.Bold)
+                    }
+                    TextButton(onClick = { onReject(member.uid) }) {
+                        Text("REJECT", color = MotoRed, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
     }
 }

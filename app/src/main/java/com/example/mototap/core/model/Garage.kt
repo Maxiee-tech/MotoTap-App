@@ -13,6 +13,7 @@ object GarageMemberRole {
 
 object GarageMemberStatus {
     const val INVITED = "invited"
+    const val PENDING = "pending"
     const val ACTIVE = "active"
     const val REMOVED = "removed"
 }

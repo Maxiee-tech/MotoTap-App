@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.mototap.core.model.UserProfile
 import com.example.mototap.core.model.UserRole
 import com.example.mototap.core.repository.AuthRepository
+import com.example.mototap.core.repository.GarageRepository
 import com.example.mototap.core.util.SignupValidation
 import com.google.firebase.auth.FirebaseAuth
 import java.util.UUID
@@ -29,7 +30,10 @@ enum class SignUpStep {
     ADDITIONAL_INFO
 }
 
-class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
+class AuthViewModel(
+    private val authRepository: AuthRepository,
+    private val garageRepository: GarageRepository,
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow<AuthUiState>(AuthUiState.Idle)
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
@@ -69,6 +73,38 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
      // Garage onboarding: "own" (manage a garage) vs "join" (staff via invite)
      val garageMode = MutableStateFlow("own")
      val garageInviteCode = MutableStateFlow("")
+     val inviteVerified = MutableStateFlow(false)
+     val verifiedGarageName = MutableStateFlow("")
+
+    fun clearVerifiedInvite() {
+        inviteVerified.value = false
+        verifiedGarageName.value = ""
+    }
+
+    fun verifyGarageInvite(onDone: (Boolean, String) -> Unit = { _, _ -> }) {
+        val code = garageInviteCode.value
+        viewModelScope.launch {
+            _uiState.value = AuthUiState.Loading
+            val lookup = runCatching {
+                garageRepository.lookupInvite(code)
+            }.getOrElse {
+                _uiState.value = AuthUiState.Error(it.message ?: "Could not verify invite code.")
+                onDone(false, it.message ?: "Could not verify invite code.")
+                return@launch
+            }
+            if (lookup == null) {
+                clearVerifiedInvite()
+                _uiState.value = AuthUiState.Error("Invalid or expired garage invite code.")
+                onDone(false, "Invalid or expired garage invite code.")
+                return@launch
+            }
+            garageInviteCode.value = lookup.inviteCode
+            inviteVerified.value = true
+            verifiedGarageName.value = lookup.garage.name.ifBlank { "Garage" }
+            _uiState.value = AuthUiState.Idle
+            onDone(true, verifiedGarageName.value)
+        }
+    }
 
     fun setVehicleMake(make: String) {
         vehicleMake.value = make
@@ -211,6 +247,17 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
                     _uiState.value = AuthUiState.Error(errorMsg)
                 } else if (result.isSuccess) {
                     Log.d("AuthViewModel", "signUp success, navigating with role ${role.value}")
+                    if (role.value == "mechanic" && garageMode.value.trim() == "join") {
+                        val lookup = garageRepository.lookupInvite(garageInviteCode.value)
+                        if (lookup == null) {
+                            clearVerifiedInvite()
+                            _uiState.value = AuthUiState.Error("Invalid or expired garage invite code.")
+                            return@launch
+                        }
+                        garageInviteCode.value = lookup.inviteCode
+                        inviteVerified.value = true
+                        verifiedGarageName.value = lookup.garage.name.ifBlank { "Garage" }
+                    }
                     _uiState.value = AuthUiState.Success(role.value)
                 } else {
                     val rawError = result.exceptionOrNull()?.message ?: ""
@@ -358,12 +405,28 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
             _uiState.value = AuthUiState.Error("Please upload a profile photo.")
             return
         }
-        if (idPhotoUrl.value.isBlank()) {
-            _uiState.value = AuthUiState.Error("Please upload your ID document photo.")
-            return
-        }
-        if (idNumber.value.isBlank()) {
-            _uiState.value = AuthUiState.Error("Please enter your ID number.")
+        val joinMode = role.value == "mechanic" && garageMode.value.trim() == "join"
+        if (!joinMode) {
+            if (idPhotoUrl.value.isBlank()) {
+                val docLabel = when (role.value) {
+                    "mechanic" -> "Certificate of Corporation"
+                    "parts_dealer" -> "business license photo"
+                    else -> "ID document photo"
+                }
+                _uiState.value = AuthUiState.Error("Please upload your $docLabel.")
+                return
+            }
+            if (idNumber.value.isBlank()) {
+                val numberLabel = when (role.value) {
+                    "mechanic" -> "Certificate of Corporation number"
+                    "parts_dealer" -> "business license number"
+                    else -> "ID number"
+                }
+                _uiState.value = AuthUiState.Error("Please enter your $numberLabel.")
+                return
+            }
+        } else if (!inviteVerified.value) {
+            _uiState.value = AuthUiState.Error("Verify your garage invite code before continuing.")
             return
         }
 
@@ -373,8 +436,8 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
             val result = authRepository.completeSignupStep2(
                 userId = userId,
                 profilePhotoUrl = profilePhotoUrl.value,
-                idPhotoUrl = idPhotoUrl.value,
-                idNumber = idNumber.value,
+                idPhotoUrl = if (joinMode) "" else idPhotoUrl.value,
+                idNumber = if (joinMode) "" else idNumber.value,
                 role = role.value,
             )
             if (result.isSuccess) {
@@ -402,6 +465,7 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
                 latitude = latitude.value,
                 longitude = longitude.value,
                 address = address.value,
+                inviteVerified = inviteVerified.value,
             )
             "parts_dealer" -> SignupValidation.validateProviderStep3(
                 institutionName = institutionName.value,

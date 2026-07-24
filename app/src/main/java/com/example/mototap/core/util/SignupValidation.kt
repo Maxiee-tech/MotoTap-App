@@ -18,8 +18,8 @@ object SignupValidation {
     }
 
     /**
-     * Mechanic step 3. When joining a garage, only experience, certificate and a
-     * valid invite code are required (institution/photo/map come from the garage).
+     * Mechanic step 3. Joiners only need experience + a verified invite code
+     * (no personal cert / garage docs). Owners still upload full garage docs.
      */
     fun validateMechanicStep3(
         garageMode: String,
@@ -31,17 +31,20 @@ object SignupValidation {
         latitude: Double?,
         longitude: Double?,
         address: String,
+        inviteVerified: Boolean = false,
     ): String? {
-        if (certificatePhotoUrl.isBlank()) return "Please upload your certification photo."
         if (experienceYears.isBlank()) return "Please select your experience."
 
         val joinMode = garageMode.trim() == "join"
         if (joinMode) {
             val code = inviteCode.trim().uppercase().filter { it.isLetterOrDigit() }
-            if (code.length < 4) return "Enter a valid garage invite code."
+            if (!inviteVerified || code.length < 4) {
+                return "Verify a valid garage invite code before finishing sign up."
+            }
             return null
         }
 
+        if (certificatePhotoUrl.isBlank()) return "Please upload your certification photo."
         return validateProviderStep3(
             institutionName = institutionName,
             experienceYears = experienceYears,

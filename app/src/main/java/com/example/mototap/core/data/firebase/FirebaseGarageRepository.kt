@@ -244,7 +244,14 @@ class FirebaseGarageRepository(
                 existingGarageId = ""
             }
 
-            if (existingGarageId == garage.id) return Result.success(garage)
+            if (existingGarageId == garage.id) {
+                val existing = getMember(garage.id, uid)
+                if (existing?.status == GarageMemberStatus.ACTIVE ||
+                    existing?.status == GarageMemberStatus.PENDING
+                ) {
+                    return Result.success(garage)
+                }
+            }
             if (garage.ownerId == uid) return Result.success(garage)
 
             val now = System.currentTimeMillis()
@@ -255,7 +262,7 @@ class FirebaseGarageRepository(
                         userSnap.getString("name")?.trim().orEmpty()
                     }).take(120),
                     "role" to GarageMemberRole.MECHANIC,
-                    "status" to GarageMemberStatus.ACTIVE,
+                    "status" to GarageMemberStatus.PENDING,
                     "joinedAtMillis" to now,
                 ),
                 com.google.firebase.firestore.SetOptions.merge()
@@ -265,6 +272,7 @@ class FirebaseGarageRepository(
                 mapOf(
                     "garageId" to garage.id,
                     "garageRole" to GarageMemberRole.MECHANIC,
+                    "garageMemberStatus" to GarageMemberStatus.PENDING,
                     "institutionName" to garage.name,
                     "address" to (garage.address),
                     "latitude" to garage.latitude,
@@ -276,6 +284,85 @@ class FirebaseGarageRepository(
             Result.success(garage)
         } catch (e: Exception) {
             Log.e("FirebaseGarageRepo", "joinGarageWithInvite error: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getMember(garageId: String, memberId: String): GarageMember? {
+        if (garageId.isBlank() || memberId.isBlank()) return null
+        return try {
+            val snap = memberRef(garageId, memberId).get().await()
+            if (!snap.exists()) null else mapMember(memberId, snap)
+        } catch (e: Exception) {
+            Log.e("FirebaseGarageRepo", "getMember error: ${e.message}")
+            null
+        }
+    }
+
+    override suspend fun approveMember(garageId: String, ownerId: String, memberId: String): Result<Unit> {
+        return try {
+            val garage = getGarage(garageId)
+                ?: return Result.failure(Exception("Garage not found."))
+            if (garage.ownerId != ownerId) {
+                return Result.failure(Exception("Only the garage owner can approve join requests."))
+            }
+            val member = getMember(garageId, memberId)
+                ?: return Result.failure(Exception("Join request not found."))
+            if (member.status == GarageMemberStatus.ACTIVE) return Result.success(Unit)
+
+            memberRef(garageId, memberId).set(
+                mapOf(
+                    "uid" to memberId,
+                    "displayName" to member.displayName,
+                    "role" to GarageMemberRole.MECHANIC,
+                    "status" to GarageMemberStatus.ACTIVE,
+                    "joinedAtMillis" to (member.joinedAtMillis.takeIf { it > 0 } ?: System.currentTimeMillis()),
+                    "approvedAtMillis" to System.currentTimeMillis(),
+                ),
+                com.google.firebase.firestore.SetOptions.merge()
+            ).await()
+
+            try {
+                garageRef(garageId).update(
+                    mapOf(
+                        "memberCount" to (garage.memberCount.coerceAtLeast(1) + 1),
+                        "updatedAtMillis" to System.currentTimeMillis(),
+                    )
+                ).await()
+            } catch (e: Exception) {
+                Log.w("FirebaseGarageRepo", "Could not bump memberCount: ${e.message}")
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FirebaseGarageRepo", "approveMember error: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun rejectMember(garageId: String, ownerId: String, memberId: String): Result<Unit> {
+        return try {
+            val garage = getGarage(garageId)
+                ?: return Result.failure(Exception("Garage not found."))
+            if (garage.ownerId != ownerId) {
+                return Result.failure(Exception("Only the garage owner can reject join requests."))
+            }
+            val member = getMember(garageId, memberId)
+                ?: return Result.failure(Exception("Join request not found."))
+
+            memberRef(garageId, memberId).set(
+                mapOf(
+                    "uid" to memberId,
+                    "displayName" to member.displayName,
+                    "role" to (member.role.ifBlank { GarageMemberRole.MECHANIC }),
+                    "status" to GarageMemberStatus.REMOVED,
+                    "joinedAtMillis" to (member.joinedAtMillis.takeIf { it > 0 } ?: System.currentTimeMillis()),
+                    "rejectedAtMillis" to System.currentTimeMillis(),
+                ),
+                com.google.firebase.firestore.SetOptions.merge()
+            ).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FirebaseGarageRepo", "rejectMember error: ${e.message}")
             Result.failure(e)
         }
     }

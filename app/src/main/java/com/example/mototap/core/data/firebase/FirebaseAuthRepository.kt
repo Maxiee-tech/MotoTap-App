@@ -6,6 +6,7 @@ import com.example.mototap.core.model.UserRole
 import com.example.mototap.core.model.VerificationStatus
 import com.example.mototap.core.model.Review
 import com.example.mototap.core.model.GarageMemberRole
+import com.example.mototap.core.model.GarageMemberStatus
 import com.example.mototap.core.repository.AuthRepository
 import com.example.mototap.core.repository.GarageRepository
 import com.google.firebase.auth.FirebaseAuth
@@ -463,6 +464,7 @@ class FirebaseAuthRepository(
                     "address" to garage.address,
                     "garageId" to garage.id,
                     "garageRole" to GarageMemberRole.MECHANIC,
+                    "garageMemberStatus" to GarageMemberStatus.PENDING,
                     "onboardingStep" to 3,
                     "onboardingComplete" to true,
                     "status" to "PENDING",

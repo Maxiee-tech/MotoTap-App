@@ -3,7 +3,9 @@ package com.example.mototap.features.mechanic
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.mototap.core.model.GarageMember
 import com.example.mototap.core.model.GarageMemberRole
+import com.example.mototap.core.model.GarageMemberStatus
 import com.example.mototap.core.model.JobRequest
 import com.example.mototap.core.model.JobStatus
 import com.example.mototap.core.repository.AuthRepository
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.tasks.await
 
 data class MechanicUiState(
     val openJobs: List<JobRequest> = emptyList(),
@@ -45,6 +48,8 @@ data class MechanicUiState(
     val garageId: String = "",
     val garageRole: String = "",
     val inviteCode: String = "",
+    val pendingJoinRequests: List<GarageMember> = emptyList(),
+    val garageMemberStatus: String = "",
     val garageSelectedSkills: List<String> = emptyList(),
     // Flat (default) garage prices for editing: service -> KSh (non-towing).
     val garageServicePrices: Map<String, Long> = emptyMap(),
@@ -168,6 +173,26 @@ class MechanicDashboardViewModel(
     private suspend fun loadGarageState(garageId: String) {
         if (garageId.isBlank()) return
         val garage = garageRepository.getGarage(garageId) ?: return
+        val members = garageRepository.listMembers(garageId)
+        val pending = members.filter { it.status == GarageMemberStatus.PENDING }
+        val self = members.firstOrNull { it.uid == FirebaseAuth.getInstance().currentUser?.uid }
+        if (self?.status == GarageMemberStatus.ACTIVE &&
+            _uiState.value.garageRole == GarageMemberRole.MECHANIC
+        ) {
+            // Joiner self-upgrades to APPROVED once owner activates membership.
+            FirebaseAuth.getInstance().currentUser?.uid?.let { uid ->
+                runCatching {
+                    com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                        .collection("users").document(uid)
+                        .update(
+                            mapOf(
+                                "status" to "APPROVED",
+                                "garageMemberStatus" to GarageMemberStatus.ACTIVE,
+                            )
+                        ).await()
+                }
+            }
+        }
         val flatPrices = linkedMapOf<String, Long>()
         val vehiclePrices = linkedMapOf<String, Map<String, Long>>()
         garage.servicePrices.forEach { (service, inner) ->
@@ -177,10 +202,46 @@ class MechanicDashboardViewModel(
         }
         _uiState.value = _uiState.value.copy(
             inviteCode = garage.inviteCode,
+            pendingJoinRequests = pending,
+            garageMemberStatus = self?.status.orEmpty(),
             garageSelectedSkills = garage.skills,
             garageServicePrices = flatPrices,
             garageVehiclePrices = vehiclePrices,
         )
+    }
+
+    fun approveJoinRequest(memberId: String) {
+        val garageId = _uiState.value.garageId
+        val ownerId = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        if (garageId.isBlank() || memberId.isBlank()) return
+        viewModelScope.launch {
+            val result = garageRepository.approveMember(garageId, ownerId, memberId)
+            if (result.isSuccess) {
+                loadGarageState(garageId)
+                _uiState.value = _uiState.value.copy(infoMessage = "Mechanic approved.")
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    infoMessage = result.exceptionOrNull()?.message ?: "Could not approve request."
+                )
+            }
+        }
+    }
+
+    fun rejectJoinRequest(memberId: String) {
+        val garageId = _uiState.value.garageId
+        val ownerId = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        if (garageId.isBlank() || memberId.isBlank()) return
+        viewModelScope.launch {
+            val result = garageRepository.rejectMember(garageId, ownerId, memberId)
+            if (result.isSuccess) {
+                loadGarageState(garageId)
+                _uiState.value = _uiState.value.copy(infoMessage = "Join request rejected.")
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    infoMessage = result.exceptionOrNull()?.message ?: "Could not reject request."
+                )
+            }
+        }
     }
 
     fun toggleSkill(skill: String) {

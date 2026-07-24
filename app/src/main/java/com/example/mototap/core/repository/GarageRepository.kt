@@ -20,12 +20,18 @@ interface GarageRepository {
     /** Create a garage owned by the mechanic (garage-of-one). */
     suspend fun createGarageForOwner(ownerId: String, profile: UserProfile): Result<Garage>
 
-    /** Join an existing garage via invite code (abandons an accidental solo garage). */
+    /** Join via invite — creates a pending membership until the owner approves. */
     suspend fun joinGarageWithInvite(
         userId: String,
         inviteCode: String,
         profile: UserProfile,
     ): Result<Garage>
+
+    suspend fun getMember(garageId: String, memberId: String): GarageMember?
+
+    suspend fun approveMember(garageId: String, ownerId: String, memberId: String): Result<Unit>
+
+    suspend fun rejectMember(garageId: String, ownerId: String, memberId: String): Result<Unit>
 
     suspend fun regenerateInviteCode(garageId: String, ownerId: String): Result<String>
 
