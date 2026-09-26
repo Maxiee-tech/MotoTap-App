@@ -18,6 +18,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mototap.R
+import com.example.mototap.core.ui.LegalPolicyLinks
 import com.example.mototap.ui.theme.MotoRed
 
 @Composable
@@ -181,5 +182,10 @@ fun LoginScreen(
                 color = MotoRed
             )
         }
+
+        LegalPolicyLinks(
+            modifier = Modifier.padding(top = 8.dp),
+            showDeleteLink = true,
+        )
     }
 }

@@ -159,7 +159,10 @@
     <string name="overview">Overview</string>
 
     <string name="contact_mechanic">Contact Mechanic</string>
+    <string name="contact_options">Contact Options</string>
     <string name="call_direct">Call Direct</string>
     <string name="send_message">Send Message</string>
-    <string name="contact_options">Contact Options</string>
+    <string name="legal_delete_account_web">Request deletion on the web</string>
+    <string name="privacy_policy">Privacy Policy</string>
+    <string name="terms_and_conditions">Terms &amp; Conditions</string>
 </resources>

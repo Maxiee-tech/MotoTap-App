@@ -30,5 +30,14 @@
     <string name="my_jobs">Kazi zangu</string>
     <string name="request_mechanic">Omba fundi</string>
     <string name="overview">Muhtasari</string>
+
+    <string name="contact_mechanic">Wasiliana na Fundi</string>
+    <string name="contact_options">Njia za Mawasiliano</string>
+    <string name="call_direct">Piga Simu Moja kwa Moja</string>
+    <string name="send_message">Tuma Ujumbe</string>
+
+    <string name="legal_delete_account_web">Omba kufuta akaunti kwenye tovuti</string>
+    <string name="privacy_policy">Sera ya Faragha</string>
+    <string name="terms_and_conditions">Sheria na Masharti</string>
 </resources>
 

@@ -1,17 +1,22 @@
 package com.example.mototap
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.example.mototap.core.data.MechanicSeeder
 import com.example.mototap.core.data.firebase.FirebaseAuthRepository
 import com.example.mototap.core.data.firebase.FirebaseGarageRepository
 import com.example.mototap.core.data.firebase.FirestoreChatRepository
 import com.example.mototap.core.data.firebase.FirestoreJobRepository
+import com.example.mototap.core.notify.IncomingAlertsHost
 import com.example.mototap.core.update.AppUpdateChecker
 import com.example.mototap.core.update.AppUpdateDialog
 import com.example.mototap.core.update.AppUpdateInfo
@@ -34,12 +39,21 @@ fun MotoTapApp() {
         pendingUpdate = AppUpdateChecker.checkForUpdate(context.applicationContext)
     }
 
-    MotoTapNavHost(
-        authRepository = authRepository,
-        jobRepository = jobRepository,
-        chatRepository = chatRepository,
-        garageRepository = garageRepository,
-    )
+    Box(modifier = Modifier.fillMaxSize()) {
+        MotoTapNavHost(
+            authRepository = authRepository,
+            jobRepository = jobRepository,
+            chatRepository = chatRepository,
+            garageRepository = garageRepository,
+        )
+        Box(modifier = Modifier.align(Alignment.TopCenter)) {
+            IncomingAlertsHost(
+                authRepository = authRepository,
+                chatRepository = chatRepository,
+                jobRepository = jobRepository,
+            )
+        }
+    }
 
     pendingUpdate?.let { info ->
         AppUpdateDialog(

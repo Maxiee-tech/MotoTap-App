@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil3.compose.AsyncImage
+import com.example.mototap.core.ui.LegalPolicyLinks
 import com.example.mototap.R
 import com.example.mototap.core.util.SignupValidation
 import com.example.mototap.ui.theme.MotoRed
@@ -429,6 +430,9 @@ fun BasicInfoStep(viewModel: AuthViewModel, onNavigateToLogin: () -> Unit) {
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        LegalPolicyLinks(showDeleteLink = true)
 
         Button(
             onClick = {

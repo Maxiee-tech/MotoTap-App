@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -35,6 +36,7 @@ import com.example.mototap.features.auth.LocationNamePicker
 import com.example.mototap.R
 import com.example.mototap.core.model.GarageMemberRole
 import com.example.mototap.core.model.UserRole
+import com.example.mototap.core.ui.LegalUrls
 import com.example.mototap.core.util.computeLoyalty
 import com.example.mototap.ui.theme.MotoRed
 import com.google.firebase.auth.FirebaseAuth
@@ -485,6 +487,21 @@ fun ProfileScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text("Delete Account", color = Color.White, fontWeight = FontWeight.Bold)
                             }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val uriHandler = LocalUriHandler.current
+                        TextButton(
+                            onClick = { uriHandler.openUri(LegalUrls.PRIVACY) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Privacy Policy", color = Color.LightGray)
+                        }
+                        TextButton(
+                            onClick = { uriHandler.openUri(LegalUrls.DELETE_ACCOUNT) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Delete account on the web", color = Color.LightGray)
                         }
                     }
                 }
