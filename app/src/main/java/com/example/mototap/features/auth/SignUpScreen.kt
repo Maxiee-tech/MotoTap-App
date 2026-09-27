@@ -432,7 +432,10 @@ fun BasicInfoStep(viewModel: AuthViewModel, onNavigateToLogin: () -> Unit) {
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        LegalPolicyLinks(showDeleteLink = true)
+        LegalPolicyLinks(
+            modifier = Modifier.fillMaxWidth(),
+            showDeleteLink = true
+        )
 
         Button(
             onClick = {

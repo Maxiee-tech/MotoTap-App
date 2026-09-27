@@ -9,11 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -22,13 +17,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.mototap.R
-import com.example.mototap.ui.theme.MotoRed
+import com.example.mototap.ui.theme.MotoBlue
 
 @Composable
 fun SplashScreen(
@@ -38,47 +34,33 @@ fun SplashScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(Color.White)
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Image(
-            painter = painterResource(id = R.drawable.app_icon_source),
+            painter = painterResource(id = R.drawable.brand_logo_wide),
             contentDescription = "MotoTap",
             contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .size(120.dp)
-                .clip(RoundedCornerShape(28.dp)),
+            modifier = Modifier.fillMaxWidth(0.86f),
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Text(
-            text = "MOTO TAP",
-            style = MaterialTheme.typography.headlineLarge.copy(
-                color = MotoRed,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 4.sp
-            ),
-            textAlign = TextAlign.Center
-        )
-        
         Text(
             text = stringResource(id = R.string.splash_tagline),
             style = MaterialTheme.typography.bodyMedium.copy(
-                color = Color.White,
+                color = Color(0xFF444444),
                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
             ),
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp),
+            modifier = Modifier.padding(top = 16.dp),
         )
 
         Spacer(modifier = Modifier.height(32.dp))
 
         Button(
             onClick = onGetStarted,
-            colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
+            colors = ButtonDefaults.buttonColors(containerColor = MotoBlue),
             shape = MaterialTheme.shapes.extraSmall,
             modifier = Modifier
                 .fillMaxWidth(0.6f)

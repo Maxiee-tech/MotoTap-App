@@ -2,6 +2,7 @@ package com.example.mototap.core.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material3.Text
@@ -34,7 +35,10 @@ fun LegalPolicyLinks(
     showDeleteLink: Boolean = true,
 ) {
     val uriHandler = LocalUriHandler.current
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         val annotated = buildAnnotatedString {
             append("By continuing you agree to our ")
             pushStringAnnotation("terms", LegalUrls.TERMS)
@@ -52,6 +56,12 @@ fun LegalPolicyLinks(
         }
         ClickableText(
             text = annotated,
+            style = androidx.compose.ui.text.TextStyle(
+                color = textColor,
+                textAlign = TextAlign.Center,
+                fontSize = 12.sp
+            ),
+            modifier = Modifier.fillMaxWidth(),
             onClick = { offset ->
                 annotated.getStringAnnotations(offset, offset).firstOrNull()?.let {
                     uriHandler.openUri(it.item)

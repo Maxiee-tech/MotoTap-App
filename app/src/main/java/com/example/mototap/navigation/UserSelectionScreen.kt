@@ -23,7 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mototap.R
-import com.example.mototap.ui.theme.MotoRed
+import com.example.mototap.ui.theme.MotoBlue
 
 @Composable
 fun UserSelectionScreen(
@@ -54,7 +54,7 @@ fun UserSelectionScreen(
         ) {
             Button(
                 onClick = onRequestService,
-                colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
+                colors = ButtonDefaults.buttonColors(containerColor = MotoBlue),
                 shape = MaterialTheme.shapes.extraSmall,
                 modifier = Modifier
                     .weight(1f)
@@ -72,7 +72,7 @@ fun UserSelectionScreen(
 
             Button(
                 onClick = onProvideService,
-                colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
+                colors = ButtonDefaults.buttonColors(containerColor = MotoBlue),
                 shape = MaterialTheme.shapes.extraSmall,
                 modifier = Modifier
                     .weight(1f)
