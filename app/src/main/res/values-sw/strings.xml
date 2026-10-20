@@ -1,10 +1,13 @@
 <resources>
     <string name="app_name">Moto Tap</string>
     <string name="splash_tagline">Washa safari yako, msaada upo kwa mguso mmoja tu.</string>
-    <string name="login_title">Karibu tena</string>
-    <string name="login_subtitle">Ingia ili kuweka oda kwa fundi, kuzungumza, na kufuatilia maombi yako.</string>
+    <string name="login_title">Karibia tu</string>
+    <string name="login_subtitle">Ingia ili kuungana na mafundi karibu nawe.</string>
     <string name="login_forgot_password">Umesahau nenosiri?</string>
     <string name="login_or_divider">AU</string>
+    <string name="continue_with_google">Endelea na Google</string>
+    <string name="continue_with_phone">Endelea na nambari ya simu</string>
+    <string name="continue_with_email">Endelea na barua pepe</string>
     <string name="forgot_password_title">Weka upya nenosiri lako</string>
     <string name="forgot_password_subtitle">Weka barua pepe yako — ikiwa akaunti ipo, tutatuma kiungo salama cha kuweka upya.</string>
     <string name="forgot_password_button">Tuma kiungo cha kuweka upya</string>

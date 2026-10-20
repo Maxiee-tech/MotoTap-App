@@ -6,15 +6,15 @@ plugins {
 }
 
 android {
-    namespace = "com.example.mototap"
+    namespace = "ke.co.mototap"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.mototap"
+        applicationId = "ke.co.mototap"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "1.0.2"
 
         buildConfigField("String", "CLOUDINARY_CLOUD_NAME", "\"deoquaz6p\"")
         buildConfigField("String", "CLOUDINARY_PRESET_PROFILE_PHOTOS", "\"profile_photos\"")

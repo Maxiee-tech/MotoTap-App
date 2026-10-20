@@ -124,12 +124,12 @@
     <string name="add_review">ADD REVIEW</string>
 
     <string name="home">Home</string>
-    <string name="requests">Requests</string>
+    <string name="requests">History</string>
     <string name="messages">Messages</string>
     <string name="profile">Profile</string>
 
-    <string name="login_title">Welcome back</string>
-    <string name="login_subtitle">Sign in to book mechanics, chat, and track your requests.</string>
+    <string name="login_title">Almost there</string>
+    <string name="login_subtitle">Sign in to connect with mechanics near you.</string>
     <string name="login_phone_label">Phone number</string>
     <string name="login_pin_label">PIN / Password</string>
     <string name="login_button">Sign in</string>
@@ -137,6 +137,10 @@
     <string name="login_error">Unable to sign in. Please try again.</string>
     <string name="login_forgot_password">Forgot Password?</string>
     <string name="login_or_divider">OR</string>
+    <string name="continue_with_google">Continue with Google</string>
+    <string name="continue_with_phone">Continue with Phone Number</string>
+    <string name="continue_with_email">Continue with Email</string>
+    <string name="google_web_client_id" translatable="false">359527347402-p2hbv29oi450a4l8cs2kn26hguervn3r.apps.googleusercontent.com</string>
     <string name="login_create_account">No account? Sign up</string>
     <string name="forgot_password_title">Reset your password</string>
     <string name="forgot_password_subtitle">Enter your email — if an account exists, we\'ll send a secure reset link.</string>
