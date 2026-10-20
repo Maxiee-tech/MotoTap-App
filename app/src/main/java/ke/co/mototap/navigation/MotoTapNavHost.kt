@@ -21,6 +21,10 @@ import ke.co.mototap.core.repository.GarageRepository
 import ke.co.mototap.core.repository.JobRepository
 import ke.co.mototap.core.model.JobRequest
 import ke.co.mototap.core.model.JobStatus
+import ke.co.mototap.core.notify.AppNotification
+import ke.co.mototap.core.notify.AppNotificationCenter
+import ke.co.mototap.core.notify.AppNotificationKind
+import ke.co.mototap.core.notify.NotificationsScreen
 import ke.co.mototap.features.auth.*
 import ke.co.mototap.features.driver.*
 import ke.co.mototap.features.mechanic.*
@@ -76,6 +80,50 @@ private fun androidx.navigation.NavHostController.goAuthed(loggedIn: Boolean, de
         navigate(destination) { launchSingleTop = true }
     } else {
         navigate(AppRoute.Login.route) { launchSingleTop = true }
+    }
+}
+
+private fun androidx.navigation.NavHostController.openAppNotification(
+    notification: AppNotification,
+    role: UserRole?,
+    driverViewModel: ke.co.mototap.features.driver.DriverHomeViewModel,
+    mechanicViewModel: ke.co.mototap.features.mechanic.MechanicDashboardViewModel,
+) {
+    AppNotificationCenter.markRead(notification.id)
+    when (notification.kind) {
+        AppNotificationKind.MESSAGE -> navigate(AppRoute.Chat.createRoute(notification.targetId)) {
+            popUpTo(AppRoute.Notifications.route) { inclusive = true }
+            launchSingleTop = true
+        }
+        AppNotificationKind.INCOMING_REQUEST -> navigate(
+            AppRoute.IncomingRequest.createRoute(notification.targetId),
+        ) {
+            popUpTo(AppRoute.Notifications.route) { inclusive = true }
+            launchSingleTop = true
+        }
+        AppNotificationKind.JOB -> {
+            val statusName = notification.extra.substringBefore("|")
+            val mechanicId = notification.extra.substringAfter("|", "")
+            if (role == UserRole.MECHANIC || role == UserRole.PARTS_DEALER) {
+                val job = mechanicViewModel.uiState.value.findJob(notification.targetId)
+                popBackStack(AppRoute.Notifications.route, inclusive = true)
+                navigateProviderActiveJob(job)
+            } else {
+                val dest = if (
+                    (statusName == JobStatus.COMPLETED.name || statusName == JobStatus.PAID.name) &&
+                    mechanicId.isNotBlank()
+                ) {
+                    AppRoute.RatingReview.createRoute(mechanicId)
+                } else {
+                    driverViewModel.focusJob(notification.targetId)
+                    AppRoute.JobTracking.route
+                }
+                navigate(dest) {
+                    popUpTo(AppRoute.Notifications.route) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+        }
     }
 }
 
@@ -268,7 +316,10 @@ fun MotoTapNavHost(
                 },
                 onNavigateToProfile = {
                     navController.navigate(AppRoute.Profile.route)
-                }
+                },
+                onNavigateToNotifications = {
+                    navController.navigate(AppRoute.Notifications.route)
+                },
             )
         }
 
@@ -440,7 +491,9 @@ fun MotoTapNavHost(
         composable(AppRoute.JobTracking.route) {
             val userProfile by authViewModel.userProfile.collectAsState()
             val driverUiState by driverViewModel.uiState.collectAsState()
-            val activeJob = driverUiState.jobs.firstOrNull { it.mechanicId != null && it.status != ke.co.mototap.core.model.JobStatus.COMPLETED }
+            val focusedId = driverUiState.focusedJobId
+            val activeJob = driverUiState.jobs.firstOrNull { it.id == focusedId }
+                ?: driverUiState.jobs.firstOrNull { it.mechanicId != null && it.status != ke.co.mototap.core.model.JobStatus.COMPLETED }
             val bookedMechanic = driverUiState.selectedMechanic
                 ?: driverUiState.availableMechanics.firstOrNull { it.id == activeJob?.mechanicId }
 
@@ -521,6 +574,21 @@ fun MotoTapNavHost(
             )
         }
 
+        composable(AppRoute.Notifications.route) {
+            val profile by authViewModel.userProfile.collectAsState()
+            NotificationsScreen(
+                onBack = { navController.popBackStack() },
+                onOpen = { item ->
+                    navController.openAppNotification(
+                        notification = item,
+                        role = profile?.role,
+                        driverViewModel = driverViewModel,
+                        mechanicViewModel = mechanicViewModel,
+                    )
+                },
+            )
+        }
+
         composable(AppRoute.Profile.route) {
             ProfileScreen(
                 viewModel = authViewModel,
@@ -578,6 +646,9 @@ fun MotoTapNavHost(
                 onIncomingRequest = { jobId ->
                     navController.navigate(AppRoute.IncomingRequest.createRoute(jobId))
                 },
+                onNavigateToNotifications = {
+                    navController.navigate(AppRoute.Notifications.route)
+                },
             )
         }
         
@@ -610,6 +681,9 @@ fun MotoTapNavHost(
                     navController.navigateProviderActiveJob(
                         mechanicViewModel.uiState.value.ongoingJobs.firstOrNull()
                     )
+                },
+                onNavigateToNotifications = {
+                    navController.navigate(AppRoute.Notifications.route)
                 },
             )
         }

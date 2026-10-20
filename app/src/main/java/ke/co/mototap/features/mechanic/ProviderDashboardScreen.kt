@@ -94,6 +94,7 @@ fun ProviderDashboardScreen(
     onNavigateToProfile: () -> Unit = {},
     onNavigateToEarnings: () -> Unit = onNavigateToRequests,
     onIncomingRequest: (String) -> Unit = {},
+    onNavigateToNotifications: () -> Unit = onNavigateToRequests,
     userProfile: UserProfile? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -188,24 +189,7 @@ fun ProviderDashboardScreen(
                 },
                 actions = {
                     if (!onSetupScreen) {
-                        IconButton(
-                            onClick = {
-                                uiState.openJobs.firstOrNull()?.id?.let(onIncomingRequest)
-                                    ?: onNavigateToRequests()
-                            }
-                        ) {
-                            BadgedBox(
-                                badge = {
-                                    if (uiState.openJobs.isNotEmpty()) {
-                                        Badge(containerColor = MotoRed) {
-                                            Text("${uiState.openJobs.size.coerceAtMost(9)}")
-                                        }
-                                    }
-                                }
-                            ) {
-                                Icon(Icons.Default.Notifications, contentDescription = "Alerts", tint = MotoInk)
-                            }
-                        }
+                        ke.co.mototap.ui.NotificationBellButton(onClick = onNavigateToNotifications)
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(

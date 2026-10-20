@@ -28,6 +28,28 @@ object LegalUrls {
     const val DELETE_ACCOUNT = "https://mototap.co.ke/delete-account"
 }
 
+object ContactInfo {
+    const val SLOGAN = "TAP IT • FIX IT • GO WITH CONFIDENCE"
+    const val HEADING = "Connect with us"
+    const val COMPANY = "MotoTap Autosystems, Nairobi, Kenya"
+    const val OFFICE_ADDRESS = "The Mall, Westlands"
+    const val OFFICE_LAT = -1.264376580170016
+    const val OFFICE_LNG = 36.80267270222807
+    const val OFFICE_MAP_EMBED =
+        "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d260.83752933780715!2d36.80267270222807!3d-1.264376580170016!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x182f17401ef1b0db%3A0xcc0b439a0875f500!2sThe%20Mall%2C%20Westlands!5e0!3m2!1sen!2ske!4v1792493778236!5m2!1sen!2ske"
+    const val EMAIL_SUPPORT = "support@mototap.co.ke"
+    const val EMAIL_LAB = "themechlabcompany@gmail.com"
+    const val PHONE_1 = "0758677968"
+    const val PHONE_1_E164 = "+254758677968"
+    const val PHONE_2 = "0101452886"
+    const val PHONE_2_E164 = "+254101452886"
+    const val WHATSAPP_1 = "https://wa.me/+254758677968"
+    const val WHATSAPP_2 = "https://wa.me/+254101452886"
+    const val INSTAGRAM = "https://www.instagram.com/mototap_autosystems"
+    const val X = "https://x.com/mototap01"
+    const val THREADS = "https://www.threads.net/@mototap_autosystems"
+}
+
 @Composable
 fun LegalPolicyLinks(
     modifier: Modifier = Modifier,

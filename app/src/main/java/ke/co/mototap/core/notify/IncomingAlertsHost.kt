@@ -61,6 +61,7 @@ fun IncomingAlertsHost(
     ) { }
 
     LaunchedEffect(userId) {
+        AppNotificationCenter.attach(context, userId)
         if (userId.isNullOrBlank()) return@LaunchedEffect
         IncomingNotificationHelper.ensureChannel(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -70,12 +71,51 @@ fun IncomingAlertsHost(
         }
     }
 
+    fun showOsAlert(title: String, body: String, notificationId: Int) {
+        val alert = IncomingAlert(title, body, notificationId)
+        banner = alert
+        IncomingNotificationHelper.notify(
+            context = context,
+            title = title,
+            body = body,
+            notificationId = alert.id,
+            withSound = true,
+        )
+    }
+
     LaunchedEffect(userId) {
         val uid = userId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
         var primed = false
         val seen = mutableSetOf<String>()
         chatRepository.observeChatSummaries(uid).collectLatest { summaries ->
             val unread = summaries.filter { it.unread }
+            unread.forEach { summary ->
+                val preview = summary.lastMessage.text.trim()
+                val body = buildString {
+                    append(summary.otherUserName.ifBlank { "MotoTap" })
+                    if (preview.isNotEmpty()) {
+                        append(" · ")
+                        append(preview.take(80))
+                    }
+                }
+                AppNotificationCenter.upsert(
+                    AppNotification(
+                        id = "msg:${summary.partnerId}",
+                        title = "New message",
+                        body = body,
+                        createdAtMillis = summary.lastMessage.timestampMillis.takeIf { it > 0 }
+                            ?: System.currentTimeMillis(),
+                        kind = AppNotificationKind.MESSAGE,
+                        targetId = summary.roomId.ifBlank { summary.jobId },
+                        extra = summary.partnerId,
+                        read = false,
+                    ),
+                )
+            }
+            val unreadPartners = unread.map { it.partnerId }.toSet()
+            AppNotificationCenter.markReadWhere {
+                it.kind == AppNotificationKind.MESSAGE && it.extra !in unreadPartners
+            }
             if (!primed) {
                 unread.forEach {
                     seen += "${it.partnerId}:${it.lastMessage.timestampMillis}"
@@ -86,24 +126,15 @@ fun IncomingAlertsHost(
             unread.forEach { summary ->
                 val key = "${summary.partnerId}:${summary.lastMessage.timestampMillis}"
                 if (seen.add(key)) {
-                    val title = "New message"
+                    val preview = summary.lastMessage.text.trim()
                     val body = buildString {
                         append(summary.otherUserName.ifBlank { "MotoTap" })
-                        val preview = summary.lastMessage.text.trim()
                         if (preview.isNotEmpty()) {
                             append(" · ")
                             append(preview.take(80))
                         }
                     }
-                    val alert = IncomingAlert(title, body, key.hashCode())
-                    banner = alert
-                    IncomingNotificationHelper.notify(
-                        context = context,
-                        title = title,
-                        body = body,
-                        notificationId = alert.id,
-                        withSound = true,
-                    )
+                    showOsAlert("New message", body, key.hashCode())
                 }
             }
         }
@@ -117,6 +148,25 @@ fun IncomingAlertsHost(
         val seen = mutableSetOf<String>()
         jobRepository.observeOpenJobs().collectLatest { jobs ->
             val incoming = jobs.filter { it.status == JobStatus.REQUESTED }
+            incoming.forEach { job ->
+                AppNotificationCenter.upsert(
+                    AppNotification(
+                        id = "req:${job.id}",
+                        title = "New service request",
+                        body = job.issueType.ifBlank { "A driver requested a service nearby." },
+                        createdAtMillis = job.createdAtMillis.takeIf { it > 0 }
+                            ?: System.currentTimeMillis(),
+                        kind = AppNotificationKind.INCOMING_REQUEST,
+                        targetId = job.id,
+                        extra = job.status.name,
+                        read = false,
+                    ),
+                )
+            }
+            val openIds = incoming.map { it.id }.toSet()
+            AppNotificationCenter.markReadWhere {
+                it.kind == AppNotificationKind.INCOMING_REQUEST && it.targetId !in openIds
+            }
             if (!primed) {
                 incoming.forEach { seen += it.id }
                 primed = true
@@ -126,15 +176,7 @@ fun IncomingAlertsHost(
                 if (seen.add(job.id)) {
                     val title = "New service request"
                     val body = job.issueType.ifBlank { "A driver requested a service nearby." }
-                    val alert = IncomingAlert(title, body, job.id.hashCode())
-                    banner = alert
-                    IncomingNotificationHelper.notify(
-                        context = context,
-                        title = title,
-                        body = body,
-                        notificationId = alert.id,
-                        withSound = true,
-                    )
+                    showOsAlert(title, body, job.id.hashCode())
                 }
             }
         }
@@ -143,7 +185,7 @@ fun IncomingAlertsHost(
     LaunchedEffect(userId) {
         val uid = userId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
         val role = authRepository.getUserRole(uid)?.lowercase().orEmpty()
-        if (role == "mechanic") return@LaunchedEffect
+        if (role == "mechanic" || role == "parts_dealer") return@LaunchedEffect
         var primed = false
         val seen = mutableMapOf<String, JobStatus>()
         jobRepository.observeDriverJobs(uid).collectLatest { jobs ->
@@ -156,25 +198,36 @@ fun IncomingAlertsHost(
                 val prev = seen[job.id]
                 seen[job.id] = job.status
                 if (prev == null || prev == job.status) return@forEach
-                if (job.status != JobStatus.ASSIGNED && job.status != JobStatus.IN_PROGRESS) {
-                    return@forEach
+                val title: String
+                val body: String
+                when (job.status) {
+                    JobStatus.ASSIGNED -> {
+                        title = "Job update"
+                        body = "${job.issueType.ifBlank { "Your request" }} was accepted."
+                    }
+                    JobStatus.IN_PROGRESS -> {
+                        title = "Job update"
+                        body = "${job.issueType.ifBlank { "Your request" }} is in progress."
+                    }
+                    JobStatus.COMPLETED, JobStatus.PAID -> {
+                        title = "Job completed"
+                        body = "${job.issueType.ifBlank { "Your request" }} is complete."
+                    }
+                    else -> return@forEach
                 }
-                val title = "Job update"
-                val issue = job.issueType.ifBlank { "Your request" }
-                val body = if (job.status == JobStatus.ASSIGNED) {
-                    "$issue was accepted."
-                } else {
-                    "$issue is in progress."
-                }
-                val alert = IncomingAlert(title, body, job.id.hashCode())
-                banner = alert
-                IncomingNotificationHelper.notify(
-                    context = context,
-                    title = title,
-                    body = body,
-                    notificationId = alert.id,
-                    withSound = true,
+                AppNotificationCenter.upsert(
+                    AppNotification(
+                        id = "job:${job.id}:${job.status.name}",
+                        title = title,
+                        body = body,
+                        createdAtMillis = System.currentTimeMillis(),
+                        kind = AppNotificationKind.JOB,
+                        targetId = job.id,
+                        extra = "${job.status.name}|${job.mechanicId.orEmpty()}",
+                        read = false,
+                    ),
                 )
+                showOsAlert(title, body, job.id.hashCode())
             }
         }
     }

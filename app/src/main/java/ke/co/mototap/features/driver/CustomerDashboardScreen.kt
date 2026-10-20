@@ -1,5 +1,7 @@
 package ke.co.mototap.features.driver
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,16 +19,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.rememberCameraPositionState
 import ke.co.mototap.core.data.SERVICE_DISPLAY_GROUP_ORDER
 import ke.co.mototap.core.data.serviceCategoriesForDisplayGroup
 import ke.co.mototap.core.model.JobRequest
 import ke.co.mototap.core.model.JobStatus
 import ke.co.mototap.core.model.UserProfile
 import ke.co.mototap.core.model.VerificationStatus
+import ke.co.mototap.core.ui.ContactInfo
 import ke.co.mototap.core.util.formatKsh
 import ke.co.mototap.ui.BottomNavigationBar
 import ke.co.mototap.ui.BrandLogo
@@ -79,6 +90,7 @@ fun CustomerDashboardScreen(
     onNavigateToRequests: () -> Unit = {},
     onNavigateToMessages: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
+    onNavigateToNotifications: () -> Unit = onNavigateToRequests,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -97,14 +109,12 @@ fun CustomerDashboardScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            CenterAlignedTopAppBar(
+            TopAppBar(
                 title = { BrandLogo(modifier = Modifier.height(26.dp)) },
                 actions = {
-                    IconButton(onClick = onNavigateToRequests) {
-                        Icon(Icons.Default.Notifications, contentDescription = "Alerts", tint = MotoInk)
-                    }
+                    ke.co.mototap.ui.NotificationBellButton(onClick = onNavigateToNotifications)
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.White,
                     titleContentColor = MotoInk,
                     navigationIconContentColor = MotoInk,
@@ -133,13 +143,12 @@ fun CustomerDashboardScreen(
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
                 item {
-                    DriverHomeDashboard(
+                    DriverHomeProfileHeader(
                         profile = userProfile,
-                        jobs = uiState.jobs,
-                        onSeeAllJobs = onNavigateToRequests,
                         onOpenProfile = onNavigateToProfile,
                     )
                 }
+
                 item {
                     VehicleProfileCard(
                         vehicleName = activeVehicle?.let { "${it.make} ${it.model}" } ?: "No active vehicle",
@@ -188,6 +197,24 @@ fun CustomerDashboardScreen(
                         )
                     }
                 }
+
+                item {
+                    OfficeLocationMap()
+                }
+                item {
+                    Text(
+                        text = "Your activity",
+                        color = MotoInk,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 18.sp,
+                    )
+                }
+                item {
+                    DriverHomeActivity(
+                        jobs = uiState.jobs,
+                        onSeeAllJobs = onNavigateToRequests,
+                    )
+                }
             }
 
             if (uiState.isLocating) {
@@ -205,31 +232,85 @@ fun CustomerDashboardScreen(
 }
 
 @Composable
-private fun DriverHomeDashboard(
+private fun OfficeLocationMap() {
+    val context = LocalContext.current
+    val office = LatLng(ContactInfo.OFFICE_LAT, ContactInfo.OFFICE_LNG)
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(office, 17f)
+    }
+    val markerState = remember { MarkerState(position = office) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = "Location",
+            color = MotoInk,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 18.sp,
+        )
+        Text(
+            text = "Where our office is located.",
+            color = MotoMuted,
+            fontSize = 14.sp,
+        )
+        Text(
+            text = ContactInfo.OFFICE_ADDRESS,
+            color = MotoInk,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(280.dp)
+                .clip(RoundedCornerShape(16.dp)),
+        ) {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState,
+                uiSettings = MapUiSettings(
+                    zoomControlsEnabled = true,
+                    compassEnabled = false,
+                    mapToolbarEnabled = false,
+                    scrollGesturesEnabled = true,
+                    zoomGesturesEnabled = true,
+                    rotationGesturesEnabled = false,
+                    tiltGesturesEnabled = false,
+                ),
+            ) {
+                Marker(
+                    state = markerState,
+                    title = "MotoTap Autosystems",
+                    snippet = ContactInfo.OFFICE_ADDRESS,
+                )
+            }
+        }
+        TextButton(
+            onClick = {
+                val query = Uri.encode("${ContactInfo.OFFICE_ADDRESS}, Nairobi")
+                val uri = Uri.parse(
+                    "geo:${ContactInfo.OFFICE_LAT},${ContactInfo.OFFICE_LNG}?q=$query",
+                )
+                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+            },
+            contentPadding = PaddingValues(0.dp),
+        ) {
+            Icon(
+                Icons.Default.LocationOn,
+                contentDescription = null,
+                tint = MotoRed,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Open in Google Maps", color = MotoRed, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun DriverHomeProfileHeader(
     profile: UserProfile?,
-    jobs: List<JobRequest>,
-    onSeeAllJobs: () -> Unit,
     onOpenProfile: () -> Unit,
 ) {
-    val completed = jobs.filter {
-        it.status == JobStatus.COMPLETED || it.status == JobStatus.PAID || it.status == JobStatus.CLOSED
-    }
-    val ongoing = jobs.filter {
-        it.status == JobStatus.ASSIGNED || it.status == JobStatus.IN_PROGRESS || it.status == JobStatus.MATCHING
-    }
-    val open = jobs.filter {
-        it.status == JobStatus.REQUESTED || it.status == JobStatus.INQUIRY
-    }
-    val startOfDay = remember {
-        java.util.Calendar.getInstance().apply {
-            set(java.util.Calendar.HOUR_OF_DAY, 0)
-            set(java.util.Calendar.MINUTE, 0)
-            set(java.util.Calendar.SECOND, 0)
-            set(java.util.Calendar.MILLISECOND, 0)
-        }.timeInMillis
-    }
-    val spentToday = completed.filter { it.createdAtMillis >= startOfDay }.sumOf { it.price }
-    val recent = jobs.sortedByDescending { it.createdAtMillis }.take(4)
     val photo = profile?.profilePhotoUrl?.ifBlank { null }
         ?: profile?.vehiclePhotoUrl?.ifBlank { null }
     val location = profile?.locationName?.ifBlank { profile.address }?.ifBlank { "Kenya" } ?: "Kenya"
@@ -310,7 +391,35 @@ private fun DriverHomeDashboard(
             )
             Text("Ready to request help", color = MotoMuted, fontSize = 13.sp)
         }
+    }
+}
 
+@Composable
+private fun DriverHomeActivity(
+    jobs: List<JobRequest>,
+    onSeeAllJobs: () -> Unit,
+) {
+    val completed = jobs.filter {
+        it.status == JobStatus.COMPLETED || it.status == JobStatus.PAID || it.status == JobStatus.CLOSED
+    }
+    val ongoing = jobs.filter {
+        it.status == JobStatus.ASSIGNED || it.status == JobStatus.IN_PROGRESS || it.status == JobStatus.MATCHING
+    }
+    val open = jobs.filter {
+        it.status == JobStatus.REQUESTED || it.status == JobStatus.INQUIRY
+    }
+    val startOfDay = remember {
+        java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+    val spentToday = completed.filter { it.createdAtMillis >= startOfDay }.sumOf { it.price }
+    val recent = jobs.sortedByDescending { it.createdAtMillis }.take(4)
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             DriverStatCard("Today's spend", "KSh ${formatKsh(spentToday)}", Modifier.weight(1f))
             DriverStatCard("Jobs completed", completed.size.toString(), Modifier.weight(1f))

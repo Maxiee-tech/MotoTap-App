@@ -4,14 +4,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -25,7 +20,6 @@ import ke.co.mototap.features.mechanic.ProviderHomeHeader
 import ke.co.mototap.ui.BottomNavVariant
 import ke.co.mototap.ui.BottomNavigationBar
 import ke.co.mototap.ui.BrandLogo
-import ke.co.mototap.ui.theme.MotoInk
 import ke.co.mototap.ui.theme.MotoScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,6 +33,7 @@ fun PartsDealerHomeScreen(
     onNavigateToEarnings: () -> Unit = onNavigateToRequests,
     onIncomingRequest: (String) -> Unit = {},
     onOpenJob: () -> Unit = onNavigateToRequests,
+    onNavigateToNotifications: () -> Unit = onNavigateToRequests,
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -48,26 +43,7 @@ fun PartsDealerHomeScreen(
             CenterAlignedTopAppBar(
                 title = { BrandLogo(modifier = Modifier.height(26.dp)) },
                 actions = {
-                    IconButton(
-                        onClick = {
-                            uiState.openJobs.firstOrNull()?.id?.let(onIncomingRequest)
-                                ?: onNavigateToRequests()
-                        }
-                    ) {
-                        androidx.compose.material3.BadgedBox(
-                            badge = {
-                                if (uiState.openJobs.isNotEmpty()) {
-                                    androidx.compose.material3.Badge(
-                                        containerColor = ke.co.mototap.ui.theme.MotoRed,
-                                    ) {
-                                        Text("${uiState.openJobs.size.coerceAtMost(9)}")
-                                    }
-                                }
-                            }
-                        ) {
-                            Icon(Icons.Default.Notifications, contentDescription = "Alerts", tint = MotoInk)
-                        }
-                    }
+                    ke.co.mototap.ui.NotificationBellButton(onClick = onNavigateToNotifications)
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.White),
             )

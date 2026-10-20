@@ -71,6 +71,7 @@ sealed class AppRoute(
         fun createRoute(jobId: String) = "chat/${Uri.encode(jobId)}"
     }
     data object ChatList : AppRoute("chat_list")
+    data object Notifications : AppRoute("notifications")
 
     // Legacy/Other
     data object Driver : AppRoute("driver")

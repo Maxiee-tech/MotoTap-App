@@ -3,6 +3,13 @@ package ke.co.mototap.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,15 +29,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Policy
@@ -61,6 +73,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -69,6 +82,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import ke.co.mototap.core.ui.ContactInfo
 import ke.co.mototap.ui.theme.MotoInk
 import ke.co.mototap.ui.theme.MotoMuted
 import ke.co.mototap.ui.theme.MotoRed
@@ -89,26 +103,30 @@ fun FloatingAppMenu(
     var open by remember { mutableStateOf(false) }
     var confirmLogout by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var showContacts by remember { mutableStateOf(false) }
     var deletePassword by remember { mutableStateOf("") }
     var deletePasswordVisible by remember { mutableStateOf(false) }
     val density = LocalDensity.current
-    var posX by rememberSaveable { mutableStateOf(Float.NaN) }
-    var posY by rememberSaveable { mutableStateOf(Float.NaN) }
+    val uriHandler = LocalUriHandler.current
+    var posX by rememberSaveable(key = "menu_x_v2") { mutableStateOf(Float.NaN) }
+    var posY by rememberSaveable(key = "menu_y_v2") { mutableStateOf(Float.NaN) }
 
     Box(modifier = modifier.fillMaxSize()) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val btnPx = with(density) { 40.dp.toPx() }
+        val btnPx = with(density) { 56.dp.toPx() }
         val edgePx = with(density) { 8.dp.toPx() }
         val minX = edgePx
         val minY = WindowInsets.statusBars.getTop(density).toFloat() + edgePx
         val maxX = (constraints.maxWidth - btnPx - edgePx).coerceAtLeast(minX)
         val maxY = (constraints.maxHeight - btnPx - WindowInsets.navigationBars.getBottom(density) - edgePx)
             .coerceAtLeast(minY)
+        val defaultY = ((constraints.maxHeight / 4f) - (btnPx / 2f))
+            .coerceIn(minY, maxY)
 
-        LaunchedEffect(maxX, maxY, minY) {
+        LaunchedEffect(maxX, maxY, minY, defaultY) {
             if (posX.isNaN() || posY.isNaN()) {
                 posX = maxX
-                posY = maxY
+                posY = defaultY
             } else {
                 posX = posX.coerceIn(minX, maxX)
                 posY = posY.coerceIn(minY, maxY)
@@ -116,12 +134,12 @@ fun FloatingAppMenu(
         }
 
         val drawX = if (posX.isNaN()) maxX else posX
-        val drawY = if (posY.isNaN()) maxY else posY
+        val drawY = if (posY.isNaN()) defaultY else posY
 
         Box(
             modifier = Modifier
                 .offset { IntOffset(drawX.roundToInt(), drawY.roundToInt()) }
-                .size(40.dp)
+                .size(56.dp)
                 .pointerInput(minX, minY, maxX, maxY) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
@@ -153,15 +171,8 @@ fun FloatingAppMenu(
                     }
                 },
         ) {
-            Surface(
-                shape = CircleShape,
-                color = Color.White,
-                shadowElevation = 6.dp,
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                    Icon(Icons.Default.Menu, contentDescription = "Menu", tint = MotoInk)
-                }
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                PulsingMenuOutline()
             }
         }
     }
@@ -228,6 +239,10 @@ fun FloatingAppMenu(
                     open = false
                     onTerms()
                 }
+                MenuRow("Contacts", Icons.Default.Call) {
+                    open = false
+                    showContacts = true
+                }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 MenuRow("Log Out", Icons.AutoMirrored.Filled.ExitToApp) {
                     open = false
@@ -242,6 +257,91 @@ fun FloatingAppMenu(
             }
         }
     }
+    }
+
+    if (showContacts) {
+        AlertDialog(
+            onDismissRequest = { showContacts = false },
+            title = {
+                Column {
+                    Text(
+                        ContactInfo.SLOGAN,
+                        color = MotoRed,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                    )
+                    Text(
+                        ContactInfo.HEADING,
+                        color = MotoInk,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 20.sp,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    ContactLinkRow(
+                        icon = Icons.Default.LocationOn,
+                        label = ContactInfo.COMPANY,
+                    )
+                    ContactLinkRow(
+                        icon = Icons.Default.Email,
+                        label = ContactInfo.EMAIL_SUPPORT,
+                        onClick = { uriHandler.openUri("mailto:${ContactInfo.EMAIL_SUPPORT}") },
+                    )
+                    ContactLinkRow(
+                        icon = Icons.Default.Email,
+                        label = ContactInfo.EMAIL_LAB,
+                        onClick = { uriHandler.openUri("mailto:${ContactInfo.EMAIL_LAB}") },
+                    )
+                    ContactLinkRow(
+                        icon = Icons.Default.Call,
+                        label = ContactInfo.PHONE_1,
+                        onClick = { uriHandler.openUri("tel:${ContactInfo.PHONE_1_E164}") },
+                    )
+                    ContactLinkRow(
+                        icon = Icons.Default.Call,
+                        label = ContactInfo.PHONE_2,
+                        onClick = { uriHandler.openUri("tel:${ContactInfo.PHONE_2_E164}") },
+                    )
+                    ContactLinkRow(
+                        icon = Icons.Default.Chat,
+                        label = "WhatsApp ${ContactInfo.PHONE_1}",
+                        onClick = { uriHandler.openUri(ContactInfo.WHATSAPP_1) },
+                    )
+                    ContactLinkRow(
+                        icon = Icons.Default.Chat,
+                        label = "WhatsApp ${ContactInfo.PHONE_2}",
+                        onClick = { uriHandler.openUri(ContactInfo.WHATSAPP_2) },
+                    )
+                    ContactLinkRow(
+                        icon = Icons.Default.Person,
+                        label = "Instagram @mototap_autosystems",
+                        onClick = { uriHandler.openUri(ContactInfo.INSTAGRAM) },
+                    )
+                    ContactLinkRow(
+                        icon = Icons.Default.Person,
+                        label = "X @mototap01",
+                        onClick = { uriHandler.openUri(ContactInfo.X) },
+                    )
+                    ContactLinkRow(
+                        icon = Icons.Default.Person,
+                        label = "Threads @mototap_autosystems",
+                        onClick = { uriHandler.openUri(ContactInfo.THREADS) },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showContacts = false }) {
+                    Text("Close", color = MotoRed, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = Color.White,
+        )
     }
 
     if (confirmLogout) {
@@ -324,6 +424,41 @@ fun FloatingAppMenu(
     }
 }
 
+private val MenuOutlineBright = Color(0xFFFFF59D)
+private val MenuOutlineDim = Color(0xFFC9A227)
+
+@Composable
+private fun PulsingMenuOutline() {
+    val infinite = rememberInfiniteTransition(label = "menu_outline")
+    val glow by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "glow",
+    )
+    val outline = androidx.compose.ui.graphics.lerp(MenuOutlineDim, MenuOutlineBright, glow)
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .border(width = 2.5.dp, color = outline, shape = CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = Color.White,
+            shadowElevation = 6.dp,
+            modifier = Modifier.size(40.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                Icon(Icons.Default.Menu, contentDescription = "Menu", tint = MotoInk)
+            }
+        }
+    }
+}
+
 @Composable
 private fun MenuRow(
     label: String,
@@ -340,5 +475,24 @@ private fun MenuRow(
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
         Spacer(modifier = Modifier.width(12.dp))
         Text(label, color = if (tint == MotoRed) MotoInk else tint, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+    }
+}
+
+@Composable
+private fun ContactLinkRow(
+    icon: ImageVector,
+    label: String,
+    onClick: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = MotoRed, modifier = Modifier.size(20.dp))
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(label, color = MotoInk, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     }
 }

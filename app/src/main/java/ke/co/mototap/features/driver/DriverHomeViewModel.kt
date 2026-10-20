@@ -51,6 +51,7 @@ data class DriverUiState(
     val activeVehicleMake: String = "",
     val activeVehicleModel: String = "",
     val activeVehicleId: String = "",
+    val focusedJobId: String? = null,
 )
 
 class DriverHomeViewModel(
@@ -223,6 +224,17 @@ class DriverHomeViewModel(
 
     fun clearMessage() = _uiState.update { it.copy(infoMessage = null) }
     fun setSelectedMechanic(mechanic: UserProfile) = _uiState.update { it.copy(selectedMechanic = mechanic) }
+    fun focusJob(jobId: String) {
+        _uiState.update { it.copy(focusedJobId = jobId) }
+        val job = _uiState.value.jobs.find { it.id == jobId } ?: return
+        val mechanicId = job.mechanicId ?: return
+        viewModelScope.launch {
+            val profile = authRepository.getUserProfile(mechanicId)
+            if (profile != null) {
+                _uiState.update { it.copy(selectedMechanic = profile) }
+            }
+        }
+    }
     fun setUserLocation(location: LatLng) = _uiState.update { it.copy(userLocation = location) }
 
     fun setMarketplaceMode(mode: DriverMarketplaceMode) =
