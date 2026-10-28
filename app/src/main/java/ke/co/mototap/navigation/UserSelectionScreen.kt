@@ -71,7 +71,7 @@ fun UserSelectionScreen(
                 .height(56.dp)
         ) {
             Text(
-                text = "Request Service (Driver)",
+                text = "Find a mechanic",
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp

@@ -58,7 +58,7 @@ private fun ke.co.mototap.features.mechanic.MechanicUiState.findJob(jobId: Strin
 }
 
 private fun androidx.navigation.NavHostController.homeRouteFor(role: UserRole?, loggedIn: Boolean): String {
-    if (!loggedIn) return AppRoute.UserSelection.route
+    if (!loggedIn) return AppRoute.CustomerDashboard.route
     return when (role) {
         UserRole.MECHANIC -> AppRoute.ProviderDashboard.route
         UserRole.PARTS_DEALER -> AppRoute.PartsDealerHome.route
@@ -217,9 +217,14 @@ fun MotoTapNavHost(
     ) {
         composable(AppRoute.Splash.route) {
             SplashScreen(
-                onGetStarted = {
+                onFindMechanic = {
+                    navController.navigate(AppRoute.CustomerDashboard.route) {
+                        popUpTo(AppRoute.Splash.route) { inclusive = true }
+                    }
+                },
+                onListBusiness = {
                     navController.navigate(AppRoute.UserSelection.route)
-                }
+                },
             )
         }
 
@@ -244,7 +249,11 @@ fun MotoTapNavHost(
                 }
             }
             UserSelectionScreen(
-                onRequestService = { continueWithRole("driver") },
+                onRequestService = {
+                    navController.navigate(AppRoute.CustomerDashboard.route) {
+                        popUpTo(AppRoute.Splash.route) { inclusive = true }
+                    }
+                },
                 onProvideService = { continueWithRole("mechanic") },
                 onProvideParts = { continueWithRole("parts_dealer") },
             )
