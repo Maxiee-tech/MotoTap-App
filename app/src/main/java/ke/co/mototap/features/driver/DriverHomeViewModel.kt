@@ -123,6 +123,15 @@ class DriverHomeViewModel(
         }
     }
 
+    fun refreshMechanics() {
+        viewModelScope.launch {
+            val mechanics = authRepository.getAllMechanics()
+            if (mechanics.isNotEmpty()) {
+                _uiState.update { it.copy(availableMechanics = mechanics) }
+            }
+        }
+    }
+
     fun onIssueChanged(value: String) = _uiState.update { it.copy(issueTypeInput = value) }
 
     @SuppressLint("MissingPermission")

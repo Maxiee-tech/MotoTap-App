@@ -446,6 +446,7 @@ class MechanicDashboardViewModel(
             )
             _uiState.value = _uiState.value.copy(isSavingGarageCatalog = false)
             if (result.isSuccess) {
+                authRepository.updateMechanicSkills(ownerId, skills, nested, replacePrices = true)
                 val typeCount = vehicleTypes.size
                 val typeLabel = if (typeCount == 0) {
                     "all vehicle types"

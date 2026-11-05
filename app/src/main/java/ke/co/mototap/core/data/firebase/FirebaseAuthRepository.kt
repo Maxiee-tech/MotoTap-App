@@ -31,8 +31,11 @@ import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.firestore.FirebaseFirestore
 import ke.co.mototap.core.data.cloudinary.CloudinaryUploadService
 import ke.co.mototap.core.util.normalizeServicePrices
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -48,8 +51,6 @@ class FirebaseAuthRepository(
     companion object {
         private const val PUBLIC_PROFILES_COLLECTION = "publicProfiles"
         private const val PASSWORD_RESET_CONTINUE_URL = "https://mototap.co.ke/"
-        private val MECHANIC_ROLE_QUERY = listOf("mechanic", "MECHANIC")
-        private val PARTS_DEALER_ROLE_QUERY = listOf("parts_dealer", "PARTS_DEALER")
     }
 
     private fun parseUserRole(roleStr: String?): UserRole {
@@ -169,7 +170,18 @@ class FirebaseAuthRepository(
             if (garageId.isEmpty()) mechanic
             else {
                 val garage = garageById[garageId]
+                val garageSkills = garage?.skills.orEmpty()
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                val mergedSkills = (mechanic.skills + garageSkills)
+                    .distinctBy { it.lowercase() }
+                val mergedServices = (mechanic.availableServices + mergedSkills)
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .distinctBy { it.lowercase() }
                 mechanic.copy(
+                    skills = mergedSkills,
+                    availableServices = mergedServices,
                     garageServicePrices = garage?.servicePrices ?: emptyMap(),
                     garageVehicleTypes = garage?.vehicleTypes ?: emptyList(),
                     garagePhotos = garage?.garagePhotos?.takeIf { it.isNotEmpty() }
@@ -987,26 +999,40 @@ class FirebaseAuthRepository(
         return CloudinaryUploadService.uploadSignupImage(context, userId, folder, uri)
     }
 
-    private fun approvedPublicProfilesQuery(roles: List<String>) =
+    /** Same as the website: approved publicProfiles, then filter role in code. */
+    private fun approvedPublicProfiles() =
         firestore.collection(PUBLIC_PROFILES_COLLECTION)
-            .whereIn("role", roles)
             .whereEqualTo("status", "APPROVED")
+
+    private fun firestoreStringList(value: Any?): List<String> {
+        return when (value) {
+            is List<*> -> value.mapNotNull { it?.toString()?.trim() }.filter { it.isNotEmpty() }
+            is Map<*, *> -> value.keys.mapNotNull { it?.toString()?.trim() }.filter { it.isNotEmpty() }
+            else -> emptyList()
+        }
+    }
 
     private fun mapApprovedPublicProfiles(
         docs: List<com.google.firebase.firestore.DocumentSnapshot>,
         rolePredicate: (String?) -> Boolean,
     ): List<UserProfile> = docs.mapNotNull { doc ->
-        val role = doc.getString("role")?.lowercase()?.trim()
-        if (rolePredicate(role)) {
-            mapDocumentToUserProfile(doc.id, doc)
-        } else null
+        runCatching {
+            val role = doc.getString("role")?.lowercase()?.trim()
+            if (rolePredicate(role)) mapDocumentToUserProfile(doc.id, doc) else null
+        }.onFailure { error ->
+            Log.e("FirebaseAuthRepo", "Skip public profile ${doc.id}: ${error.message}")
+        }.getOrNull()
+    }
+
+    private suspend fun loadApprovedMechanics(): List<UserProfile> {
+        val snapshot = approvedPublicProfiles().get().await()
+        val mechanics = mapApprovedPublicProfiles(snapshot.documents) { role -> role == "mechanic" }
+        return hydrateGarageServicePrices(mechanics)
     }
 
     override suspend fun getAllMechanics(): List<UserProfile> {
         return try {
-            val snapshot = approvedPublicProfilesQuery(MECHANIC_ROLE_QUERY).get().await()
-            val mechanics = mapApprovedPublicProfiles(snapshot.documents) { role -> role == "mechanic" }
-            hydrateGarageServicePrices(mechanics)
+            loadApprovedMechanics()
         } catch (e: Exception) {
             Log.e("FirebaseAuthRepo", "getAllMechanics error: ${e.message}")
             emptyList()
@@ -1014,33 +1040,38 @@ class FirebaseAuthRepository(
     }
 
     override fun observeAllMechanics(): Flow<List<UserProfile>> = callbackFlow {
-        val registration = approvedPublicProfilesQuery(MECHANIC_ROLE_QUERY)
+        suspend fun emitFromDocs(docs: List<com.google.firebase.firestore.DocumentSnapshot>) {
+            val mechanics = mapApprovedPublicProfiles(docs) { role -> role == "mechanic" }
+            trySendBlocking(mechanics)
+            runCatching { hydrateGarageServicePrices(mechanics) }
+                .onSuccess { trySendBlocking(it) }
+        }
+
+        launch {
+            runCatching { loadApprovedMechanics() }
+                .onSuccess { trySendBlocking(it) }
+                .onFailure { Log.e("FirebaseAuthRepo", "Initial mechanics load failed: ${it.message}") }
+        }
+
+        val registration = approvedPublicProfiles()
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.e("FirebaseAuthRepo", "Error observing mechanics: ${error.message}")
-                    trySend(emptyList())
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val mechanics = mapApprovedPublicProfiles(snapshot.documents) { role ->
-                        role == "mechanic"
-                    }
-                    trySend(mechanics)
-                    launch {
-                        runCatching { hydrateGarageServicePrices(mechanics) }
-                            .onSuccess { trySend(it) }
-                    }
+                    launch { emitFromDocs(snapshot.documents) }
                 }
             }
         awaitClose {
             Log.d("FirebaseAuthRepo", "Removing mechanics observer")
             registration.remove()
         }
-    }
+    }.buffer(Channel.CONFLATED)
 
     override suspend fun getAllPartsDealers(): List<UserProfile> {
         return try {
-            val snapshot = approvedPublicProfilesQuery(PARTS_DEALER_ROLE_QUERY).get().await()
+            val snapshot = approvedPublicProfiles().get().await()
             mapApprovedPublicProfiles(snapshot.documents) { role ->
                 role == "parts_dealer" || role == "parts dealer"
             }
@@ -1051,25 +1082,24 @@ class FirebaseAuthRepository(
     }
 
     override fun observeAllPartsDealers(): Flow<List<UserProfile>> = callbackFlow {
-        val registration = approvedPublicProfilesQuery(PARTS_DEALER_ROLE_QUERY)
+        val registration = approvedPublicProfiles()
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.e("FirebaseAuthRepo", "Error observing parts dealers: ${error.message}")
-                    trySend(emptyList())
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
                     val dealers = mapApprovedPublicProfiles(snapshot.documents) { role ->
                         role == "parts_dealer" || role == "parts dealer"
                     }
-                    trySend(dealers)
+                    trySendBlocking(dealers)
                 }
             }
         awaitClose {
             Log.d("FirebaseAuthRepo", "Removing parts dealers observer")
             registration.remove()
         }
-    }
+    }.buffer(Channel.CONFLATED)
 
     private fun mapDocumentToUserProfile(id: String, doc: com.google.firebase.firestore.DocumentSnapshot): UserProfile {
         val name = doc.getString("name") ?: ""
@@ -1079,10 +1109,10 @@ class FirebaseAuthRepository(
         val role = parseUserRole(roleStr)
         val status = parseVerificationStatus(doc.getString("status"))
 
-        val garagePhotos = (doc.get("garagePhotos") as? List<*>)?.mapNotNull { it.toString() } ?: emptyList()
-        val skills = (doc.get("skills") as? List<*>)?.mapNotNull { it.toString() } ?: emptyList()
-        val availableServices = (doc.get("availableServices") as? List<*>)?.mapNotNull { it.toString() } ?: emptyList()
-        val brandSpecializations = (doc.get("brandSpecializations") as? List<*>)?.mapNotNull { it.toString() } ?: emptyList()
+        val garagePhotos = firestoreStringList(doc.get("garagePhotos"))
+        val skills = firestoreStringList(doc.get("skills"))
+        val availableServices = firestoreStringList(doc.get("availableServices")).ifEmpty { skills }
+        val brandSpecializations = firestoreStringList(doc.get("brandSpecializations"))
 
         val parts = (doc.get("parts") as? List<*>)?.mapNotNull { it.toString() } ?: emptyList()
         val availableParts = (doc.get("availableParts") as? List<*>)?.mapNotNull { it.toString() } ?: emptyList()

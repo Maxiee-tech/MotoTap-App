@@ -284,8 +284,31 @@ fun formatDistanceMeters(meters: Float): String {
     else String.format(Locale.US, "%.1f km away", meters / 1000f)
 }
 
-fun mechanicServiceInventory(mechanic: ke.co.mototap.core.model.UserProfile): List<String> =
-    (mechanic.availableServices + mechanic.skills)
+fun mechanicServiceInventory(mechanic: UserProfile): List<String> =
+    (mechanic.availableServices + mechanic.skills + mechanic.servicePrices.keys + mechanic.garageServicePrices.keys)
         .map { it.trim() }
         .filter { it.isNotEmpty() }
         .distinctBy { it.lowercase() }
+
+private fun normalizeServiceMatchKey(value: String): String =
+    value.trim().lowercase().replace('/', ' ').replace(Regex("\\s+"), " ")
+
+private fun serviceMatchKeys(serviceName: String): Set<String> {
+    val target = normalizeServiceMatchKey(serviceName)
+    if (target.isEmpty()) return emptySet()
+    return buildSet {
+        add(target)
+        if (target == "jumpstart") add("battery jumpstart")
+        if (target == "battery jumpstart") add("jumpstart")
+    }
+}
+
+/** True when this mechanic/garage offers the catalog service the driver selected. */
+fun mechanicOffersService(mechanic: UserProfile, serviceName: String): Boolean {
+    val targets = serviceMatchKeys(serviceName)
+    if (targets.isEmpty()) return false
+    return mechanicServiceInventory(mechanic).any { offered ->
+        val value = normalizeServiceMatchKey(offered)
+        targets.any { target -> value == target || value.contains(target) }
+    }
+}

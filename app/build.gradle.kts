@@ -13,8 +13,8 @@ android {
         applicationId = "ke.co.mototap"
         minSdk = 24
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 5
+        versionName = "1.0.4"
 
         buildConfigField("String", "CLOUDINARY_CLOUD_NAME", "\"deoquaz6p\"")
         buildConfigField("String", "CLOUDINARY_PRESET_PROFILE_PHOTOS", "\"profile_photos\"")

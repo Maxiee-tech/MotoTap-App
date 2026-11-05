@@ -351,7 +351,7 @@ fun MotoTapNavHost(
             route = AppRoute.MechanicMap.route,
             arguments = listOf(navArgument("service") { type = NavType.StringType })
         ) { backStackEntry ->
-            val service = backStackEntry.arguments?.getString("service") ?: ""
+            val service = android.net.Uri.decode(backStackEntry.arguments?.getString("service") ?: "")
             val userProfile by authViewModel.userProfile.collectAsState()
             
             MechanicMapScreen(

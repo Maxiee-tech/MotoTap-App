@@ -1,10 +1,14 @@
 package ke.co.mototap
 
+import ke.co.mototap.core.model.UserProfile
 import ke.co.mototap.core.util.DEFAULT_PRICE_KEY
 import ke.co.mototap.core.util.buildServicePricesPayload
+import ke.co.mototap.core.util.mechanicOffersService
 import ke.co.mototap.core.util.normalizeServicePrices
 import ke.co.mototap.core.util.resolveVehiclePrice
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MarketplacePricingTest {
@@ -59,5 +63,23 @@ class MarketplacePricingTest {
 
         assertEquals(mapOf(DEFAULT_PRICE_KEY to 1_250L), prices["Oil Change"])
         assertEquals(1_250L, resolveVehiclePrice(prices["Oil Change"], "Honda", "Fit"))
+    }
+
+    @Test
+    fun garageSkillsCountAsOfferedServices() {
+        val mechanic = UserProfile(
+            skills = emptyList(),
+            availableServices = emptyList(),
+            garageServicePrices = mapOf("Engine oil top-up/change" to mapOf(DEFAULT_PRICE_KEY to 2_000L)),
+        )
+        assertTrue(mechanicOffersService(mechanic, "Engine oil top-up/change"))
+        assertTrue(mechanicOffersService(mechanic, "Engine oil top-up change"))
+        assertFalse(mechanicOffersService(mechanic, "Jumpstart"))
+    }
+
+    @Test
+    fun jumpstartMatchesBatteryJumpstartAlias() {
+        val mechanic = UserProfile(skills = listOf("Battery Jumpstart"))
+        assertTrue(mechanicOffersService(mechanic, "Jumpstart"))
     }
 }

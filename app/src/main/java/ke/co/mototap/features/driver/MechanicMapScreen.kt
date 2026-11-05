@@ -45,6 +45,7 @@ import ke.co.mototap.core.util.formatKsh
 import ke.co.mototap.core.util.formatShopAreaLabel
 import ke.co.mototap.core.util.garageServicesVehicle
 import ke.co.mototap.core.util.getMechanicServicePrice
+import ke.co.mototap.core.util.mechanicOffersService
 import ke.co.mototap.ui.MotoButtonShape
 import ke.co.mototap.ui.MotoCardShape
 import ke.co.mototap.ui.theme.MotoGreen
@@ -66,6 +67,7 @@ fun MechanicMapScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val selectedService = remember(service) { android.net.Uri.decode(service).trim() }
     var sort by remember { mutableStateOf(ProviderSort.NEAREST) }
     var showSearch by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -73,36 +75,35 @@ fun MechanicMapScreen(
 
     val filteredMechanics = remember(
         uiState.availableMechanics,
-        service,
+        selectedService,
         uiState.activeVehicleMake,
         uiState.activeVehicleModel,
         query,
     ) {
-        val trimmedService = service.trim().lowercase()
         val q = query.trim().lowercase()
-        uiState.availableMechanics.filter { mechanic ->
-            val hasService = mechanic.availableServices.any { it.trim().lowercase() == trimmedService } ||
-                mechanic.skills.any { it.trim().lowercase() == trimmedService }
-            val containsService = mechanic.availableServices.any { it.trim().lowercase().contains(trimmedService) } ||
-                mechanic.skills.any { it.trim().lowercase().contains(trimmedService) }
+        val offering = uiState.availableMechanics.filter { mechanic ->
             val matchesQuery = q.isBlank() ||
                 mechanic.name.contains(q, ignoreCase = true) ||
-                mechanic.locationName.contains(q, ignoreCase = true)
-            (hasService || containsService) &&
-                matchesQuery &&
-                garageServicesVehicle(
-                    mechanic.garageVehicleTypes,
-                    uiState.activeVehicleMake,
-                    uiState.activeVehicleModel,
-                )
+                mechanic.locationName.contains(q, ignoreCase = true) ||
+                mechanic.address.contains(q, ignoreCase = true)
+            mechanicOffersService(mechanic, selectedService) && matchesQuery
         }
+        val vehicleMatched = offering.filter { mechanic ->
+            garageServicesVehicle(
+                mechanic.garageVehicleTypes,
+                uiState.activeVehicleMake,
+                uiState.activeVehicleModel,
+            )
+        }
+        // Same providers as the website: if vehicle types hide everyone, still show who offers the service.
+        if (vehicleMatched.isNotEmpty()) vehicleMatched else offering
     }
 
     val sortedMechanics = remember(
         filteredMechanics,
         sort,
         uiState.userLocation,
-        service,
+        selectedService,
         uiState.activeVehicleMake,
         uiState.activeVehicleModel,
     ) {
@@ -110,7 +111,7 @@ fun MechanicMapScreen(
             when (sort) {
                 ProviderSort.NEAREST -> compareBy { distanceMeters(uiState.userLocation, it) ?: Float.MAX_VALUE }
                 ProviderSort.LOWEST_PRICE -> compareBy {
-                    getMechanicServicePrice(it, service, uiState.activeVehicleMake, uiState.activeVehicleModel)
+                    getMechanicServicePrice(it, selectedService, uiState.activeVehicleMake, uiState.activeVehicleModel)
                         ?: Long.MAX_VALUE
                 }
                 ProviderSort.HIGHEST_RATED -> compareByDescending<UserProfile> { it.rating }
@@ -132,6 +133,7 @@ fun MechanicMapScreen(
     }
 
     LaunchedEffect(Unit) {
+        viewModel.refreshMechanics()
         if (!locationPermissionGranted) {
             permissionLauncher.launch(
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -243,7 +245,7 @@ fun MechanicMapScreen(
                 items(sortedMechanics, key = { it.id }) { mechanic ->
                     NearbyProviderCard(
                         mechanic = mechanic,
-                        service = service,
+                        service = selectedService,
                         userLocation = uiState.userLocation,
                         vehicleMake = uiState.activeVehicleMake,
                         vehicleModel = uiState.activeVehicleModel,
