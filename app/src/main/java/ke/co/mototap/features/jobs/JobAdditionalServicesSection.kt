@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ke.co.mototap.core.model.JobAdditionalService
 import ke.co.mototap.core.util.JobAdditionalServices
+import ke.co.mototap.ui.motoTextFieldColors
 import ke.co.mototap.ui.theme.MotoInk
 import ke.co.mototap.ui.theme.MotoRed
 import java.text.SimpleDateFormat
@@ -83,15 +83,9 @@ fun JobAdditionalServicesSection(
                 value = draft,
                 onValueChange = { draft = it.take(JobAdditionalServices.MAX_TEXT) },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Describe an additional service carried out…") },
+                placeholder = { Text("Describe an additional service carried out…", color = Color.Gray) },
                 minLines = 2,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = MotoRed,
-                    unfocusedBorderColor = Color.DarkGray,
-                    cursorColor = MotoRed,
-                ),
+                colors = motoTextFieldColors(),
             )
             Button(
                 onClick = {

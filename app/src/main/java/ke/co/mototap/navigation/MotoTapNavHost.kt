@@ -1,18 +1,13 @@
 package ke.co.mototap.navigation
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ke.co.mototap.core.repository.AuthRepository
@@ -31,8 +26,6 @@ import ke.co.mototap.features.mechanic.*
 import ke.co.mototap.features.partsdealer.PartsDealerHomeScreen
 import com.google.firebase.auth.FirebaseAuth
 import ke.co.mototap.core.model.UserRole
-import ke.co.mototap.core.ui.LegalUrls
-import ke.co.mototap.ui.FloatingAppMenu
 import kotlinx.coroutines.launch
 
 private fun androidx.navigation.NavHostController.navigateProviderActiveJob(job: JobRequest?) {
@@ -55,32 +48,6 @@ private fun ke.co.mototap.features.mechanic.MechanicUiState.findJob(jobId: Strin
         ?: completedJobs.firstOrNull { it.id == jobId }
         ?: ongoingJobs.firstOrNull()
         ?: completedJobs.firstOrNull()
-}
-
-private fun androidx.navigation.NavHostController.homeRouteFor(role: UserRole?, loggedIn: Boolean): String {
-    if (!loggedIn) return AppRoute.CustomerDashboard.route
-    return when (role) {
-        UserRole.MECHANIC -> AppRoute.ProviderDashboard.route
-        UserRole.PARTS_DEALER -> AppRoute.PartsDealerHome.route
-        else -> AppRoute.CustomerDashboard.route
-    }
-}
-
-private fun androidx.navigation.NavHostController.goHome(role: UserRole?, loggedIn: Boolean) {
-    val dest = homeRouteFor(role, loggedIn)
-    if (currentDestination?.route == dest) return
-    val popped = popBackStack(dest, inclusive = false)
-    if (!popped) {
-        navigate(dest) { launchSingleTop = true }
-    }
-}
-
-private fun androidx.navigation.NavHostController.goAuthed(loggedIn: Boolean, destination: String) {
-    if (loggedIn) {
-        navigate(destination) { launchSingleTop = true }
-    } else {
-        navigate(AppRoute.Login.route) { launchSingleTop = true }
-    }
 }
 
 private fun androidx.navigation.NavHostController.openAppNotification(
@@ -200,17 +167,6 @@ fun MotoTapNavHost(
         }
     }
 
-    val userProfile by authViewModel.userProfile.collectAsState()
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
-    val showFloatingMenu = currentRoute != null &&
-        currentRoute != AppRoute.Splash.route &&
-        currentRoute != AppRoute.UserSelection.route
-    val uriHandler = LocalUriHandler.current
-    val currentUserId by authRepository.currentUserId.collectAsState(initial = FirebaseAuth.getInstance().currentUser?.uid)
-    val loggedIn = !currentUserId.isNullOrBlank()
-
-    Box(modifier = Modifier.fillMaxSize()) {
     NavHost(
         navController = navController,
         startDestination = AppRoute.Splash.route,
@@ -328,6 +284,13 @@ fun MotoTapNavHost(
                 },
                 onNavigateToNotifications = {
                     navController.navigate(AppRoute.Notifications.route)
+                },
+                onLogout = {
+                    authViewModel.logout {
+                        navController.navigate(AppRoute.Login.route) {
+                            popUpTo(navController.graph.id) { inclusive = true }
+                        }
+                    }
                 },
             )
         }
@@ -658,6 +621,13 @@ fun MotoTapNavHost(
                 onNavigateToNotifications = {
                     navController.navigate(AppRoute.Notifications.route)
                 },
+                onLogout = {
+                    authViewModel.logout {
+                        navController.navigate(AppRoute.Login.route) {
+                            popUpTo(navController.graph.id) { inclusive = true }
+                        }
+                    }
+                },
             )
         }
         
@@ -693,6 +663,13 @@ fun MotoTapNavHost(
                 },
                 onNavigateToNotifications = {
                     navController.navigate(AppRoute.Notifications.route)
+                },
+                onLogout = {
+                    authViewModel.logout {
+                        navController.navigate(AppRoute.Login.route) {
+                            popUpTo(navController.graph.id) { inclusive = true }
+                        }
+                    }
                 },
             )
         }
@@ -875,41 +852,6 @@ fun MotoTapNavHost(
                         popUpTo(AppRoute.CustomerDashboard.route) { inclusive = true }
                     }
                 }
-            )
-        }
-    }
-
-        if (showFloatingMenu) {
-            FloatingAppMenu(
-                modifier = Modifier.fillMaxSize(),
-                onHome = { navController.goHome(userProfile?.role, loggedIn) },
-                onHistory = { navController.goAuthed(loggedIn, AppRoute.RequestHistory.route) },
-                onProfile = { navController.goAuthed(loggedIn, AppRoute.Profile.route) },
-                onMessages = { navController.goAuthed(loggedIn, AppRoute.ChatList.route) },
-                onPrivacy = { uriHandler.openUri(LegalUrls.PRIVACY) },
-                onTerms = { uriHandler.openUri(LegalUrls.TERMS) },
-                onLogout = {
-                    if (!loggedIn) {
-                        navController.navigate(AppRoute.Login.route) { launchSingleTop = true }
-                    } else {
-                        authViewModel.logout {
-                            navController.navigate(AppRoute.Login.route) {
-                                popUpTo(navController.graph.id) { inclusive = true }
-                            }
-                        }
-                    }
-                },
-                onDelete = { password ->
-                    if (!loggedIn) {
-                        navController.navigate(AppRoute.Login.route) { launchSingleTop = true }
-                    } else {
-                        authViewModel.deleteAccount(password) {
-                            navController.navigate(AppRoute.Login.route) {
-                                popUpTo(navController.graph.id) { inclusive = true }
-                            }
-                        }
-                    }
-                },
             )
         }
     }

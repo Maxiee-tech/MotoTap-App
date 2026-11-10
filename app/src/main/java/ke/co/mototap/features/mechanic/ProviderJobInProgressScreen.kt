@@ -246,6 +246,8 @@ fun ProviderJobInProgressScreen(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 88.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = MotoInk,
+                    unfocusedTextColor = MotoInk,
                     focusedBorderColor = MotoCardLine,
                     unfocusedBorderColor = MotoCardLine,
                     focusedContainerColor = Color(0xFFF7F7F8),

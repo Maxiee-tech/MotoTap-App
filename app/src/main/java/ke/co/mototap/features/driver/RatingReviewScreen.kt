@@ -109,10 +109,13 @@ fun RatingReviewScreen(
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
+                    focusedTextColor = MotoInk,
+                    unfocusedTextColor = MotoInk,
                     focusedBorderColor = MotoRed,
-                    unfocusedBorderColor = Color.Gray
+                    unfocusedBorderColor = Color.Gray,
+                    cursorColor = MotoRed,
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
                 )
             )
 

@@ -20,6 +20,7 @@ import ke.co.mototap.features.mechanic.ProviderHomeHeader
 import ke.co.mototap.ui.BottomNavVariant
 import ke.co.mototap.ui.BottomNavigationBar
 import ke.co.mototap.ui.BrandLogo
+import ke.co.mototap.ui.WithDashboardMenu
 import ke.co.mototap.ui.theme.MotoScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,14 +35,20 @@ fun PartsDealerHomeScreen(
     onIncomingRequest: (String) -> Unit = {},
     onOpenJob: () -> Unit = onNavigateToRequests,
     onNavigateToNotifications: () -> Unit = onNavigateToRequests,
+    onLogout: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
+    WithDashboardMenu(
+        profile = profile,
+        onProfile = onNavigateToProfile,
+        onLogout = onLogout,
+    ) { openMenu ->
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { BrandLogo(modifier = Modifier.height(26.dp)) },
+                title = { BrandLogo(modifier = Modifier.height(26.dp), onClick = openMenu) },
                 actions = {
                     ke.co.mototap.ui.NotificationBellButton(onClick = onNavigateToNotifications)
                 },
@@ -83,5 +90,6 @@ fun PartsDealerHomeScreen(
                 )
             }
         }
+    }
     }
 }

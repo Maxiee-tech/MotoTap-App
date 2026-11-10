@@ -3,9 +3,11 @@ package ke.co.mototap.features.driver
 import android.Manifest
 import android.content.pm.PackageManager
 import android.location.Location
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -15,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.LocationOn
@@ -23,6 +26,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,13 +35,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil3.compose.AsyncImage
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapType
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.rememberCameraPositionState
+import ke.co.mototap.core.util.formatPlaceAndDistance
+import ke.co.mototap.core.util.getOpenClosedStatus
+import kotlinx.coroutines.launch
 import ke.co.mototap.core.model.UserProfile
 import ke.co.mototap.core.model.VerificationStatus
 import ke.co.mototap.core.util.formatDistanceMeters
@@ -70,6 +88,7 @@ fun MechanicMapScreen(
     val selectedService = remember(service) { android.net.Uri.decode(service).trim() }
     var sort by remember { mutableStateOf(ProviderSort.NEAREST) }
     var showSearch by remember { mutableStateOf(false) }
+    var showMap by rememberSaveable { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var favorites by remember { mutableStateOf(setOf<String>()) }
 
@@ -151,26 +170,39 @@ fun MechanicMapScreen(
     }
 
     val locationLabel = uiState.locationInput.ifBlank { "Nairobi, Kenya" }
+    val mappedMechanics = remember(sortedMechanics) {
+        sortedMechanics.filter { it.latitude != null && it.longitude != null }
+    }
+
+    BackHandler(enabled = showMap) { showMap = false }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = "Mechanic",
+                        text = if (showMap) {
+                            "MECHANICS: ${selectedService.uppercase()}"
+                        } else {
+                            "Mechanic"
+                        },
                         color = MotoInk,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 18.sp,
+                        fontSize = if (showMap) 15.sp else 18.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { if (showMap) showMap = false else onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MotoInk)
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showSearch = !showSearch }) {
-                        Icon(Icons.Default.Search, contentDescription = "Search", tint = MotoInk)
+                    if (!showMap) {
+                        IconButton(onClick = { showSearch = !showSearch }) {
+                            Icon(Icons.Default.Search, contentDescription = "Search", tint = MotoInk)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -186,6 +218,18 @@ fun MechanicMapScreen(
                 .fillMaxSize()
                 .padding(paddingValues),
         ) {
+            if (showMap) {
+                NearbyProvidersMap(
+                    modifier = Modifier.fillMaxSize(),
+                    service = selectedService,
+                    mechanics = mappedMechanics,
+                    userLocation = uiState.userLocation,
+                    locationPermissionGranted = locationPermissionGranted,
+                    vehicleMake = uiState.activeVehicleMake,
+                    vehicleModel = uiState.activeVehicleModel,
+                    onMechanicDetailsClick = onMechanicDetailsClick,
+                )
+            } else {
             if (showSearch) {
                 OutlinedTextField(
                     value = query,
@@ -203,12 +247,31 @@ fun MechanicMapScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 item {
-                    Text(
-                        text = "Nearby providers",
-                        color = MotoInk,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 26.sp,
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = "Nearby providers",
+                            color = MotoInk,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 26.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (sortedMechanics.isNotEmpty()) {
+                            Text(
+                                text = "View in map",
+                                color = MotoRed,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                textDecoration = TextDecoration.Underline,
+                                modifier = Modifier
+                                    .clickable { showMap = true }
+                                    .padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.LocationOn, contentDescription = null, tint = MotoRed, modifier = Modifier.size(16.dp))
@@ -257,6 +320,211 @@ fun MechanicMapScreen(
                     )
                 }
                 item { Spacer(modifier = Modifier.height(8.dp)) }
+            }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NearbyProvidersMap(
+    service: String,
+    mechanics: List<UserProfile>,
+    userLocation: LatLng?,
+    locationPermissionGranted: Boolean,
+    vehicleMake: String,
+    vehicleModel: String,
+    onMechanicDetailsClick: (UserProfile) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var selectedMechanic by remember(mechanics) { mutableStateOf<UserProfile?>(null) }
+    val closest = remember(mechanics, userLocation) {
+        mechanics.minByOrNull { distanceMeters(userLocation, it) ?: Float.MAX_VALUE }
+    }
+    LaunchedEffect(closest) {
+        if (selectedMechanic == null && closest != null) {
+            selectedMechanic = closest
+        }
+    }
+
+    val initialPos = userLocation ?: mechanics.firstOrNull()?.let {
+        LatLng(it.latitude!!, it.longitude!!)
+    } ?: LatLng(-1.286389, 36.817223)
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(initialPos, 13f)
+    }
+
+    LaunchedEffect(userLocation, mechanics) {
+        when {
+            userLocation != null -> cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(userLocation, 13f),
+            )
+            mechanics.isNotEmpty() -> cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(
+                    LatLng(mechanics.first().latitude!!, mechanics.first().longitude!!),
+                    12f,
+                ),
+            )
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        GoogleMap(
+            modifier = Modifier.fillMaxSize(),
+            cameraPositionState = cameraPositionState,
+            properties = MapProperties(
+                isMyLocationEnabled = locationPermissionGranted,
+                mapType = MapType.NORMAL,
+                isTrafficEnabled = false,
+            ),
+            uiSettings = MapUiSettings(
+                zoomControlsEnabled = true,
+                myLocationButtonEnabled = locationPermissionGranted,
+            ),
+        ) {
+            mechanics.forEach { mechanic ->
+                Marker(
+                    state = MarkerState(position = LatLng(mechanic.latitude!!, mechanic.longitude!!)),
+                    title = mechanic.institutionName.ifBlank { mechanic.name },
+                    snippet = service,
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED),
+                    onClick = {
+                        selectedMechanic = mechanic
+                        true
+                    },
+                )
+            }
+        }
+
+        selectedMechanic?.let { mechanic ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp),
+            ) {
+                NearbyMapMechanicCard(
+                    mechanic = mechanic,
+                    service = service,
+                    userLocation = userLocation,
+                    vehicleMake = vehicleMake,
+                    vehicleModel = vehicleModel,
+                    isClosest = mechanic.id == closest?.id,
+                    onDismiss = { selectedMechanic = null },
+                    onHeaderClick = {
+                        val lat = mechanic.latitude ?: return@NearbyMapMechanicCard
+                        val lng = mechanic.longitude ?: return@NearbyMapMechanicCard
+                        coroutineScope.launch {
+                            cameraPositionState.animate(
+                                CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), 15f),
+                            )
+                        }
+                    },
+                    onViewDetails = { onMechanicDetailsClick(mechanic) },
+                )
+            }
+        }
+
+        if (mechanics.isEmpty()) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(16.dp),
+                color = Color.Black.copy(alpha = 0.78f),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Text(
+                    text = "Providers offer this service but none have a map location yet.",
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    fontSize = 13.sp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NearbyMapMechanicCard(
+    mechanic: UserProfile,
+    service: String,
+    userLocation: LatLng?,
+    vehicleMake: String,
+    vehicleModel: String,
+    isClosest: Boolean,
+    onDismiss: () -> Unit,
+    onHeaderClick: () -> Unit,
+    onViewDetails: () -> Unit,
+) {
+    val meters = distanceMeters(userLocation, mechanic)
+    val placeLabel = formatPlaceAndDistance(mechanic.locationName, meters)
+    val price = getMechanicServicePrice(mechanic, service, vehicleMake, vehicleModel)
+    val hoursStatus = getOpenClosedStatus(mechanic.workingHours)
+    val shopName = mechanic.institutionName.ifBlank { mechanic.name }.ifBlank { "Garage" }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onHeaderClick),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(8.dp),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            if (isClosest) {
+                Surface(
+                    color = MotoRed,
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.padding(bottom = 8.dp),
+                ) {
+                    Text(
+                        "CLOSEST TO YOU",
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    )
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = shopName,
+                        color = MotoInk,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (placeLabel.isNotBlank()) {
+                        Text(placeLabel, color = MotoMuted, fontSize = 13.sp)
+                    }
+                    Text(
+                        text = hoursStatus.label,
+                        color = if (hoursStatus.isOpen) MotoGreen else MotoRed,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                    )
+                    Text("Service: $service", color = MotoMuted, fontSize = 13.sp)
+                    Text(
+                        text = if (price != null && price > 0) "KSh ${formatKsh(price)}" else "Price on request",
+                        color = MotoInk,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = MotoMuted)
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = onViewDetails,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MotoRed),
+                shape = MotoButtonShape,
+            ) {
+                Text("View", color = Color.White, fontWeight = FontWeight.Bold)
             }
         }
     }

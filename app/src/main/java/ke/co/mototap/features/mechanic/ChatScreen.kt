@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ke.co.mototap.core.model.ChatMessage
+import ke.co.mototap.core.ui.LinkifiedText
 import ke.co.mototap.ui.theme.MotoInk
 import ke.co.mototap.ui.theme.MotoMuted
 import ke.co.mototap.ui.theme.MotoRed
@@ -171,7 +172,12 @@ fun MessageBubble(message: ChatMessage, isCurrentUser: Boolean) {
 
     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), contentAlignment = alignment) {
         Column(modifier = Modifier.widthIn(max = 300.dp).background(bgColor, shape).padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Text(text = message.text, color = textColor, fontSize = 15.sp, lineHeight = 20.sp)
+            LinkifiedText(
+                text = message.text,
+                color = textColor,
+                linkColor = if (isCurrentUser) Color.White else MotoRed,
+                style = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, lineHeight = 20.sp),
+            )
             Row(modifier = Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestampMillis)),

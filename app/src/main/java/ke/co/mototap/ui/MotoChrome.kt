@@ -1,6 +1,7 @@
 package ke.co.mototap.ui
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -13,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import ke.co.mototap.R
 import ke.co.mototap.ui.theme.MotoCardLine
@@ -26,12 +28,22 @@ val MotoCardShape = RoundedCornerShape(18.dp)
 @Composable
 fun BrandLogo(
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
+    val clickable = if (onClick == null) {
+        Modifier
+    } else {
+        Modifier.clickable(
+            role = Role.Button,
+            onClickLabel = "Open menu",
+            onClick = onClick,
+        )
+    }
     Image(
         painter = painterResource(id = R.drawable.brand_logo_wide),
-        contentDescription = "MotoTap",
+        contentDescription = if (onClick == null) "MotoTap" else "Open menu",
         contentScale = ContentScale.Fit,
-        modifier = modifier.height(28.dp),
+        modifier = modifier.then(clickable).height(28.dp),
     )
 }
 

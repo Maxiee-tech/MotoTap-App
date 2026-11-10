@@ -1,26 +1,28 @@
 package ke.co.mototap.features.driver
 
-import android.content.Intent
-import android.net.Uri
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -38,47 +40,28 @@ import ke.co.mototap.core.model.JobStatus
 import ke.co.mototap.core.model.UserProfile
 import ke.co.mototap.core.model.VerificationStatus
 import ke.co.mototap.core.ui.ContactInfo
+import ke.co.mototap.core.ui.openExternalUri
 import ke.co.mototap.core.util.formatKsh
 import ke.co.mototap.ui.BottomNavigationBar
 import ke.co.mototap.ui.BrandLogo
 import ke.co.mototap.ui.MotoCardShape
+import ke.co.mototap.ui.WithDashboardMenu
 import ke.co.mototap.ui.theme.MotoGreen
 import ke.co.mototap.ui.theme.MotoInk
 import ke.co.mototap.ui.theme.MotoMuted
 import ke.co.mototap.ui.theme.MotoRed
 import ke.co.mototap.ui.theme.MotoScreen
 
-data class ServiceItem(val name: String, val icon: ImageVector)
+data class ServiceCardGroup(val title: String, val items: List<String>)
 
-fun serviceCategoryIcon(categoryId: String): ImageVector = when (categoryId) {
-    "road-assistance" -> Icons.Default.Warning
-    "towing-services" -> Icons.Default.Build
-    "mobile-mechanic" -> Icons.Default.Settings
-    "emergency-tire-services" -> Icons.Default.Info
-    "emergency-battery-services" -> Icons.Default.Face
-    "garage-services" -> Icons.Default.Home
-    "preventive-routine-maintenance" -> Icons.Default.Refresh
-    "vehicle-diagnostics" -> Icons.Default.Search
-    "auto-electrical-services" -> Icons.Default.Info
-    "ac-services" -> Icons.Default.Star
-    "tire-wheel-services" -> Icons.Default.Settings
-    "car-wash-services" -> Icons.Default.ShoppingCart
-    "car-body-cosmetic-services" -> Icons.Default.Edit
-    "car-customization-upgrades" -> Icons.Default.Add
-    "vehicle-electronics-security" -> Icons.Default.Key
-    else -> Icons.Default.Settings
-}
+data class ServiceItem(
+    val id: String,
+    val name: String,
+    @DrawableRes val photoRes: Int,
+    val groups: List<ServiceCardGroup>,
+)
 
-fun partsCategoryIcon(categoryId: String): ImageVector = when (categoryId) {
-    "engine-drivetrain" -> Icons.Default.Settings
-    "brakes" -> Icons.Default.Warning
-    "electrical" -> Icons.Default.Info
-    "vehicle-electronics-security" -> Icons.Default.Lock
-    "filters-fluids" -> Icons.Default.Refresh
-    "body-exterior" -> Icons.Default.DirectionsCar
-    "tyres-wheels" -> Icons.Default.Build
-    else -> Icons.Default.ShoppingCart
-}
+private val ServiceCardCollapsedHeight = 318.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,13 +74,12 @@ fun CustomerDashboardScreen(
     onNavigateToMessages: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     onNavigateToNotifications: () -> Unit = onNavigateToRequests,
+    onLogout: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val isMechanicsMode = uiState.marketplaceMode == DriverMarketplaceMode.MECHANICS
-
-    val activeVehicle = userProfile?.vehicles?.firstOrNull()
 
     LaunchedEffect(uiState.infoMessage) {
         uiState.infoMessage?.let {
@@ -106,11 +88,16 @@ fun CustomerDashboardScreen(
         }
     }
 
+    WithDashboardMenu(
+        profile = userProfile,
+        onProfile = onNavigateToProfile,
+        onLogout = onLogout,
+    ) { openMenu ->
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { BrandLogo(modifier = Modifier.height(26.dp)) },
+                title = { BrandLogo(modifier = Modifier.height(26.dp), onClick = openMenu) },
                 actions = {
                     ke.co.mototap.ui.NotificationBellButton(onClick = onNavigateToNotifications)
                 },
@@ -150,15 +137,6 @@ fun CustomerDashboardScreen(
                 }
 
                 item {
-                    VehicleProfileCard(
-                        vehicleName = activeVehicle?.let { "${it.make} ${it.model}" } ?: "No active vehicle",
-                        licensePlate = activeVehicle?.licensePlate ?: "N/A",
-                        mileage = activeVehicle?.mileage?.let { "$it km" } ?: "0 km",
-                        onEditClick = onNavigateToProfile
-                    )
-                }
-
-                item {
                     Text(
                         text = "What does your car need?",
                         color = MotoInk,
@@ -180,7 +158,14 @@ fun CustomerDashboardScreen(
                             ServiceCategorySection(
                                 title = displayGroup,
                                 services = serviceCategoriesForDisplayGroup(displayGroup).map { category ->
-                                    ServiceItem(category.name, serviceCategoryIcon(category.id))
+                                    ServiceItem(
+                                        id = category.id,
+                                        name = category.name,
+                                        photoRes = catalogServicePhotoRes(category.id),
+                                        groups = category.groups.map { group ->
+                                            ServiceCardGroup(group.title, group.items)
+                                        },
+                                    )
                                 },
                                 onCategoryClick = { onCategorySelected(it) }
                             )
@@ -191,7 +176,14 @@ fun CustomerDashboardScreen(
                         ServiceCategorySection(
                             title = "Spare Parts",
                             services = PARTS_CATEGORIES.map { category ->
-                                ServiceItem(category.name, partsCategoryIcon(category.id))
+                                ServiceItem(
+                                    id = category.id,
+                                    name = category.name,
+                                    photoRes = catalogPartsPhotoRes(category.id),
+                                    groups = category.groups.map { group ->
+                                        ServiceCardGroup(group.title, group.items)
+                                    },
+                                )
                             },
                             onCategoryClick = { onPartsCategorySelected(it) }
                         )
@@ -229,6 +221,7 @@ fun CustomerDashboardScreen(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -254,9 +247,10 @@ private fun OfficeLocationMap() {
         )
         Text(
             text = ContactInfo.OFFICE_ADDRESS,
-            color = MotoInk,
+            color = MotoRed,
             fontWeight = FontWeight.SemiBold,
             fontSize = 14.sp,
+            modifier = Modifier.clickable { context.openExternalUri(ContactInfo.OFFICE_MAPS) },
         )
         Box(
             modifier = Modifier
@@ -285,13 +279,7 @@ private fun OfficeLocationMap() {
             }
         }
         TextButton(
-            onClick = {
-                val query = Uri.encode("${ContactInfo.OFFICE_ADDRESS}, Nairobi")
-                val uri = Uri.parse(
-                    "geo:${ContactInfo.OFFICE_LAT},${ContactInfo.OFFICE_LNG}?q=$query",
-                )
-                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
-            },
+            onClick = { context.openExternalUri(ContactInfo.OFFICE_MAPS) },
             contentPadding = PaddingValues(0.dp),
         ) {
             Icon(
@@ -545,59 +533,6 @@ private fun MarketplaceToggleButton(
 }
 
 @Composable
-fun VehicleProfileCard(
-    vehicleName: String,
-    licensePlate: String,
-    mileage: String,
-    onEditClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text(
-                    text = "My Car",
-                    color = MotoRed,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = vehicleName,
-                    color = MotoInk,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Row {
-                    Text(text = "Plate: $licensePlate", color = Color.Gray, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(text = "Mileage: $mileage", color = Color.Gray, fontSize = 12.sp)
-                }
-            }
-            
-            IconButton(onClick = onEditClick) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "Edit Vehicle",
-                    tint = Color.LightGray
-                )
-            }
-        }
-    }
-}
-
-@Composable
 fun ServiceCategorySection(
     title: String,
     services: List<ServiceItem>,
@@ -615,7 +550,11 @@ fun ServiceCategorySection(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             services.chunked(2).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
                     row.forEach { service ->
                         ServiceRow(
                             service = service,
@@ -636,33 +575,120 @@ fun ServiceRow(
     onRowClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var expanded by rememberSaveable(service.id) { mutableStateOf(false) }
+    var contentHeightPx by remember(service.id) { mutableIntStateOf(0) }
+    var hasOverflow by rememberSaveable(service.id) { mutableStateOf(false) }
+
     Card(
         modifier = modifier
-            .height(110.dp)
-            .clickable { onRowClick() },
+            .then(if (expanded) Modifier else Modifier.height(ServiceCardCollapsedHeight))
+            .clickable(onClick = onRowClick),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         shape = MotoCardShape,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
+                .fillMaxWidth()
+                .then(if (expanded) Modifier else Modifier.fillMaxSize())
+                .padding(10.dp),
         ) {
-            Icon(
-                imageVector = service.icon,
-                contentDescription = service.name,
-                tint = MotoRed,
-                modifier = Modifier.size(28.dp)
-            )
+            if (service.photoRes != 0) {
+                Image(
+                    painter = painterResource(id = service.photoRes),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 10f)
+                        .clip(RoundedCornerShape(12.dp)),
+                )
+            }
             Text(
                 text = service.name,
                 color = MotoInk,
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-                maxLines = 2,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 15.sp,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 12.dp, bottom = 8.dp),
             )
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (expanded) Modifier else Modifier.weight(1f, fill = true)
+                    )
+                    .clip(RoundedCornerShape(8.dp)),
+            ) {
+                val bodyMaxPx = constraints.maxHeight
+                LaunchedEffect(contentHeightPx, bodyMaxPx, expanded) {
+                    if (!expanded && bodyMaxPx > 0 && bodyMaxPx != Constraints.Infinity) {
+                        hasOverflow = contentHeightPx > bodyMaxPx + 4
+                    }
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onSizeChanged { contentHeightPx = it.height },
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    service.groups.forEach { group ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (group.title.isNotBlank() &&
+                                !group.title.equals(service.name, ignoreCase = true)
+                            ) {
+                                Text(
+                                    text = group.title,
+                                    color = MotoInk,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                )
+                            }
+                            group.items.forEach { item ->
+                                Text(
+                                    text = item,
+                                    color = MotoMuted,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp,
+                                )
+                            }
+                        }
+                    }
+                }
+                if (hasOverflow && !expanded) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(36.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color.White.copy(alpha = 0f), Color.White),
+                                ),
+                            ),
+                    )
+                }
+            }
+            if (hasOverflow) {
+                TextButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 6.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    colors = ButtonDefaults.textButtonColors(
+                        containerColor = MotoRed.copy(alpha = 0.08f),
+                        contentColor = MotoRed,
+                    ),
+                    shape = RoundedCornerShape(50),
+                ) {
+                    Text(
+                        text = if (expanded) "Show less" else "View all services",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        letterSpacing = 0.4.sp,
+                    )
+                }
+            }
         }
     }
 }

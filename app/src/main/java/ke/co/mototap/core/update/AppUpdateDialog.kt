@@ -1,7 +1,6 @@
 package ke.co.mototap.core.update
 
-import android.content.Intent
-import android.net.Uri
+import ke.co.mototap.core.ui.openExternalUri
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,13 +29,7 @@ fun AppUpdateDialog(
     val context = LocalContext.current
 
     fun openDownload() {
-        runCatching {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(info.apkUrl)).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                },
-            )
-        }
+        context.openExternalUri(info.apkUrl)
     }
 
     AlertDialog(

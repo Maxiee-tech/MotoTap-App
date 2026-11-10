@@ -22,7 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalUriHandler
+import ke.co.mototap.core.ui.openExternalUri
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -501,15 +501,20 @@ fun ProfileScreen(
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
-                        val uriHandler = LocalUriHandler.current
                         TextButton(
-                            onClick = { uriHandler.openUri(LegalUrls.PRIVACY) },
+                            onClick = { context.openExternalUri(LegalUrls.TERMS) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Terms & Conditions", color = MotoMuted)
+                        }
+                        TextButton(
+                            onClick = { context.openExternalUri(LegalUrls.PRIVACY) },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text("Privacy Policy", color = MotoMuted)
                         }
                         TextButton(
-                            onClick = { uriHandler.openUri(LegalUrls.DELETE_ACCOUNT) },
+                            onClick = { context.openExternalUri(LegalUrls.DELETE_ACCOUNT) },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text("Delete account on the web", color = Color.LightGray)

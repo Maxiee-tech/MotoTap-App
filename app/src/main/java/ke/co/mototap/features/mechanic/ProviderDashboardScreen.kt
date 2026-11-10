@@ -71,6 +71,7 @@ import ke.co.mototap.ui.BottomNavVariant
 import ke.co.mototap.ui.BottomNavigationBar
 import ke.co.mototap.ui.BrandLogo
 import ke.co.mototap.ui.MotoCardShape
+import ke.co.mototap.ui.WithDashboardMenu
 import ke.co.mototap.ui.theme.MotoGreen
 import ke.co.mototap.ui.theme.MotoInk
 import ke.co.mototap.ui.theme.MotoMuted
@@ -95,6 +96,7 @@ fun ProviderDashboardScreen(
     onNavigateToEarnings: () -> Unit = onNavigateToRequests,
     onIncomingRequest: (String) -> Unit = {},
     onNavigateToNotifications: () -> Unit = onNavigateToRequests,
+    onLogout: () -> Unit = {},
     userProfile: UserProfile? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -149,6 +151,11 @@ fun ProviderDashboardScreen(
         }
     }
 
+    WithDashboardMenu(
+        profile = userProfile,
+        onProfile = onNavigateToProfile,
+        onLogout = onLogout,
+    ) { openMenu ->
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -167,7 +174,7 @@ fun ProviderDashboardScreen(
                             fontSize = 18.sp
                         )
                     } else {
-                        BrandLogo(modifier = Modifier.height(26.dp))
+                        BrandLogo(modifier = Modifier.height(26.dp), onClick = openMenu)
                     }
                 },
                 navigationIcon = {
@@ -838,6 +845,7 @@ fun ProviderDashboardScreen(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -1150,8 +1158,8 @@ fun ExpandableCategory(
                                         .fillMaxWidth()
                                         .padding(top = 8.dp),
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        focusedTextColor = Color.White,
-                                        unfocusedTextColor = Color.White,
+                                        focusedTextColor = MotoInk,
+                                        unfocusedTextColor = MotoInk,
                                         focusedBorderColor = MotoRed,
                                         unfocusedBorderColor = Color.DarkGray,
                                         focusedLabelColor = Color.Gray,
@@ -1254,8 +1262,8 @@ fun VehicleRatesEditor(
                     .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                     .fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
+                    focusedTextColor = MotoInk,
+                    unfocusedTextColor = MotoInk,
                     focusedBorderColor = MotoRed,
                     unfocusedBorderColor = Color.DarkGray,
                     focusedLabelColor = Color.Gray,
@@ -1294,8 +1302,8 @@ fun VehicleRatesEditor(
                     .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                     .fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
+                    focusedTextColor = MotoInk,
+                    unfocusedTextColor = MotoInk,
                     focusedBorderColor = MotoRed,
                     unfocusedBorderColor = Color.DarkGray,
                     focusedLabelColor = Color.Gray,
@@ -1326,11 +1334,13 @@ fun VehicleRatesEditor(
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
+                focusedTextColor = MotoInk,
+                unfocusedTextColor = MotoInk,
                 focusedBorderColor = MotoRed,
                 unfocusedBorderColor = Color.DarkGray,
                 cursorColor = MotoRed,
+                focusedContainerColor = Color.White,
+                unfocusedContainerColor = Color.White,
             ),
         )
 
