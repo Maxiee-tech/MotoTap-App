@@ -196,6 +196,11 @@ fun ProviderDashboardScreen(
                 },
                 actions = {
                     if (!onSetupScreen) {
+                        ke.co.mototap.ui.AccountHelpNavActions(
+                            onRequests = onNavigateToRequests,
+                            onMessages = onNavigateToMessages,
+                            onLogout = onLogout,
+                        )
                         ke.co.mototap.ui.NotificationBellButton(onClick = onNavigateToNotifications)
                     }
                 },

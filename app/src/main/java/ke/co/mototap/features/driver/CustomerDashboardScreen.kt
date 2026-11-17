@@ -99,6 +99,11 @@ fun CustomerDashboardScreen(
             TopAppBar(
                 title = { BrandLogo(modifier = Modifier.height(26.dp), onClick = openMenu) },
                 actions = {
+                    ke.co.mototap.ui.AccountHelpNavActions(
+                        onRequests = onNavigateToRequests,
+                        onMessages = onNavigateToMessages,
+                        onLogout = onLogout,
+                    )
                     ke.co.mototap.ui.NotificationBellButton(onClick = onNavigateToNotifications)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

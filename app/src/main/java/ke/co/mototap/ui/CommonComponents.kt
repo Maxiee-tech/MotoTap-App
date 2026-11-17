@@ -2,8 +2,6 @@ package ke.co.mototap.ui
 
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
@@ -37,13 +35,9 @@ fun BottomNavigationBar(
     )
     val items = when (variant) {
         BottomNavVariant.Driver -> listOf(
-            NavItem("home", stringResource(R.string.home), Icons.Default.Home),
-            NavItem("requests", stringResource(R.string.requests), Icons.AutoMirrored.Filled.List),
             NavItem("profile", stringResource(R.string.profile), Icons.Default.Person),
         )
         BottomNavVariant.Provider -> listOf(
-            NavItem("home", "Dashboard", Icons.Default.Home),
-            NavItem("requests", "Jobs", Icons.AutoMirrored.Filled.List),
             NavItem("earnings", "Earnings", Icons.Default.Star),
             NavItem("profile", stringResource(R.string.profile), Icons.Default.Person),
         )
