@@ -47,7 +47,7 @@ object ContactInfo {
     const val PHONE_2_E164 = "+254101452886"
     const val WHATSAPP_1 = "https://wa.me/+254758677968"
     const val WHATSAPP_2 = "https://wa.me/+254101452886"
-    const val INSTAGRAM = "https://www.instagram.com/mototap_autosystems"
+    const val INSTAGRAM = "https://www.instagram.com/moto_tap_autosystems"
     const val X = "https://x.com/mototap01"
     const val THREADS = "https://www.threads.net/@mototap_autosystems"
     const val OFFICE_MAPS =
